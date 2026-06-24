@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/user/iaas-platform/internal/auth"
 	"github.com/user/iaas-platform/internal/billing"
 	"github.com/user/iaas-platform/internal/compute"
+	"github.com/user/iaas-platform/internal/dashboard"
 	"github.com/user/iaas-platform/internal/middleware"
 	"github.com/user/iaas-platform/internal/organizations"
 )
@@ -33,13 +33,15 @@ func New(
 	r.Use(middleware.CORS)
 	r.Use(rl.Middleware)
 
+	r.Handle("/static/*", http.StripPrefix("/static/", dashboard.Handler()))
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"service": "iaas-platform",
-			"status":  "running",
-			"version": "1.0.0",
-		})
+		html, err := dashboard.IndexHTML()
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(html)
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
