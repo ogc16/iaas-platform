@@ -26,7 +26,7 @@ go run ./cmd/server
 ```
 docker compose exec -it postgres psql -U iaas -d iaas
 ```
-### psql
+### psql operations
 ```
 \q | quit
 \x | format output
