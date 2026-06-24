@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -31,6 +32,15 @@ func New(
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.CORS)
 	r.Use(rl.Middleware)
+
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"service": "iaas-platform",
+			"status":  "running",
+			"version": "1.0.0",
+		})
+	})
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/signup", authHandler.Signup)
