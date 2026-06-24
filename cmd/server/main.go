@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog" // Upgraded to structured logging
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,20 +20,30 @@ import (
 )
 
 func main() {
+	// Initialize structured json logger for production readability
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, err := database.Connect(ctx, cfg.DatabaseURL)
+	// Fix 1: Short-lived context scoped strictly to the connection handshake
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	pool, err := database.Connect(dbCtx, cfg.DatabaseURL)
+	dbCancel() // Liberate context resources immediately
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
-	defer pool.Close()
+	defer func() {
+		slog.Info("closing database connection pool...")
+		pool.Close()
+	}()
 
+	// Dependency Injection Engine
 	userRepo := database.NewUserRepository(pool)
 	orgRepo := database.NewOrgRepository(pool)
 	computeRepo := database.NewComputeRepository(pool)
@@ -63,24 +73,28 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start HTTP Server
 	go func() {
-		log.Printf("server starting on :%d", cfg.Port)
+		slog.Info("server starting", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server encountered an unrecoverable error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
+	// Graceful Shutdown Listening
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("shutting down server...")
+	slog.Info("shutting down HTTP server...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
+	// Fix 2: active requests drain out completely while DB pool is still alive
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server forced to shutdown: %v", err)
+		slog.Error("server forced to shutdown before finishing active requests", "error", err)
 	}
 
-	log.Println("server exited")
+	slog.Info("server exited cleanly")
 }

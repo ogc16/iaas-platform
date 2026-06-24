@@ -250,45 +250,60 @@ async function renderDashboard() {
   const main = document.getElementById('main');
   main.innerHTML = '<div class="loading">Loading...</div>';
 
-  const { ok, body: usersOrgs } = await api('/orgs');
-  if (!ok) { main.innerHTML = '<div class="loading">Failed to load dashboard</div>'; return; }
-  state.orgs = usersOrgs;
+  try {
+    const { ok, body } = await api('/orgs');
+    if (!ok) { main.innerHTML = '<div class="loading">Failed to load dashboard</div>'; return; }
+    // API may return either an array or an object containing the array.
+    // Handler currently writes `orgs` directly (array), but this makes the UI resilient.
+    state.orgs = Array.isArray(body) ? body : (body?.orgs || body?.data || []);
 
-  let totalInstances = 0, runningInstances = 0;
-  for (const org of state.orgs) {
-    const { ok, body: instances } = await api(`/orgs/${org.id}/instances`);
-    if (ok) {
+
+    // Fetch instance lists concurrently to avoid one failing request blocking rendering
+    const instanceResults = await Promise.all(
+      state.orgs.map(async (org) => {
+        const { ok, body: instances } = await api(`/orgs/${org.id}/instances`);
+        return ok ? instances : [];
+      })
+    );
+
+    let totalInstances = 0, runningInstances = 0;
+    instanceResults.forEach(instances => {
       totalInstances += instances.length;
       runningInstances += instances.filter(i => i.status === 'running').length;
+    });
+
+    // Billing usage is optional for rendering; fallback safely if it fails
+    let usage = null;
+    if (state.orgs.length > 0) {
+      const usageResp = await api(`/orgs/${state.orgs[0].id}/billing/usage`);
+      usage = usageResp.ok ? usageResp.body : null;
     }
-  }
 
-  const usage = state.orgs.length > 0
-    ? (await api(`/orgs/${state.orgs[0].id}/billing/usage`)).body
-    : null;
-
-  main.innerHTML = `
-    <div class="stats">
-      <div class="stat"><div class="label">Organizations</div><div class="value blue">${state.orgs.length}</div></div>
-      <div class="stat"><div class="label">Total Instances</div><div class="value">${totalInstances}</div></div>
-      <div class="stat"><div class="label">Running</div><div class="value green">${runningInstances}</div></div>
-      <div class="stat"><div class="label">CPU Hours (30d)</div><div class="value yellow">${usage ? usage.cpu_hours.toFixed(1) : '0'}</div></div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <h2>Organizations</h2>
-        <button class="btn btn-primary btn-sm" onclick="showCreateOrg()">+ New Org</button>
+    main.innerHTML = `
+      <div class="stats">
+        <div class="stat"><div class="label">Organizations</div><div class="value blue">${state.orgs.length}</div></div>
+        <div class="stat"><div class="label">Total Instances</div><div class="value">${totalInstances}</div></div>
+        <div class="stat"><div class="label">Running</div><div class="value green">${runningInstances}</div></div>
+        <div class="stat"><div class="label">CPU Hours (30d)</div><div class="value yellow">${usage ? usage.cpu_hours.toFixed(1) : '0'}</div></div>
       </div>
-      ${state.orgs.length === 0 ? '<div class="empty"><p>No organizations yet</p><button class="btn btn-primary" onclick="showCreateOrg()">Create your first organization</button></div>' :
-      `<table><thead><tr><th>Name</th><th>Slug</th><th>Created</th><th></th></tr></thead><tbody>
-        ${state.orgs.map(o => `<tr>
-          <td><strong>${escape(o.name)}</strong></td>
-          <td style="color:var(--muted)">${escape(o.slug)}</td>
-          <td style="color:var(--muted)">${new Date(o.created_at).toLocaleDateString()}</td>
-          <td><button class="btn btn-outline btn-sm" onclick="selectOrg(${o.id})">Manage</button></td>
-        </tr>`).join('')}
-      </tbody></table>`}
-    </div>`;
+      <div class="card">
+        <div class="card-header">
+          <h2>Organizations</h2>
+          <button class="btn btn-primary btn-sm" onclick="showCreateOrg()">+ New Org</button>
+        </div>
+        ${state.orgs.length === 0 ? '<div class="empty"><p>No organizations yet</p><button class="btn btn-primary" onclick="showCreateOrg()">Create your first organization</button></div>' :
+        `<table><thead><tr><th>Name</th><th>Slug</th><th>Created</th><th></th></tr></thead><tbody>
+          ${state.orgs.map(o => `<tr>
+            <td><strong>${escape(o.name)}</strong></td>
+            <td style="color:var(--muted)">${escape(o.slug)}</td>
+            <td style="color:var(--muted)">${new Date(o.created_at).toLocaleDateString()}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="selectOrg(${o.id})">Manage</button></td>
+          </tr>`).join('')}
+        </tbody></table>`}
+      </div>`;
+  } catch (e) {
+    main.innerHTML = '<div class="loading">Failed to load dashboard</div>';
+  }
 }
 
 async function renderOrgs() {

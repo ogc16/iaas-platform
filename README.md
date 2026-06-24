@@ -14,11 +14,24 @@ A Go-based Infrastructure-as-a-Service platform with multi-tenant organizations,
 ## Quick Start
 
 ```bash
-# Start Postgres
 docker compose up -d
+```
 
-# Run the server
+### Run the server
+```
 go run ./cmd/server
+
+```
+### open psql in cmd
+```
+docker compose exec -it postgres psql -U iaas -d iaas
+```
+### psql
+```
+\q | quit
+\x | format output
+\d | show table
+\dt | list tables & relations
 ```
 
 ## API Endpoints
