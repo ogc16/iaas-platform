@@ -2,16 +2,62 @@
 
 ![CI](https://github.com/ogc16/iaas-platform/actions/workflows/ci.yml/badge.svg)
 
-A Go-based Infrastructure-as-a-Service platform with multi-tenant organizations, compute resource management, API key authentication, rate limiting, and usage-based billing.
+A Go-based **cloud control plane and billing platform** with multi-tenant organizations, compute resource lifecycle management, API key authentication, rate limiting, quotas, and usage-based billing.
+
+> **Scope honesty.** The compute backend is a *simulation*, not a real hypervisor: instances are database rows whose lifecycle advances through a state machine driven by a wall-clock simulator. The control-plane surface — auth, multi-tenancy, quotas, capacity checks, billing, and the async lifecycle API — is real and production-shaped. A pluggable `compute.Provider` interface is the seam where a real backend (e.g. Docker, or a cloud API) can be implemented without touching the API or service layers.
+
+## Architecture
+
+```mermaid
+graph TD
+  Client[Client / API Consumer] -->|JWT / X-API-Key| Router[Chi Router & Middleware]
+  Router --> RateLimiter[Token Bucket Rate Limiter]
+  RateLimiter --> Handlers[HTTP Handlers]
+  Handlers --> Services[Compute / Billing / Org Services]
+  Services --> DB[(PostgreSQL 16)]
+  ComputeService --> Provider[Compute Provider]
+  Reconciler[Lifecycle Reconciler] --> Provider
+  Provider --> DB
+  DB --> Billing[Billing Service]
+```
+
+The API layer is thin. Services own the business rules (membership checks, quotas, capacity), and the compute service delegates instance provisioning to a `Provider` implementation. A background **reconciler** advances instances between transient states based on provider-reported state.
 
 ## Features
 
-- **User Authentication** — Signup/login with JWT and bcrypt passwords
-- **API Key Auth** — Programmatic access via `X-API-Key` header for IaaS endpoints
+- **User Authentication** — Signup/login with JWT (HS256) and bcrypt passwords; API key access via `X-API-Key`
 - **Multi-Tenant Organizations** — Create orgs, invite members, role-based access
-- **Compute Resources** — Create and manage VMs and containers with full lifecycle (start/stop/terminate)
-- **Usage-Based Billing** — Track CPU, memory, and disk usage; auto-generate invoices
-- **Rate Limiting** — Token-bucket rate limiter per IP/API key
+- **Compute Lifecycle** — Async state machine with start/stop/terminate; per-org quotas and per-region capacity enforcement
+- **Pluggable Provider** — `compute.Provider` interface; default `SimProvider` is a durable, wall-clock simulation
+- **Usage-Based Billing** — Track CPU, memory, and disk usage; generate invoices
+- **Rate Limiting** — Token-bucket limiter per IP/API key
+
+## Compute Lifecycle
+
+Instances move between states asynchronously. User actions request a transition and the API returns `202 Accepted`; the **reconciler** settles transient states:
+
+```
+pending → running → stopping → stopped
+   │         │          │           │
+   └─────────┴─── terminating → terminated
+                          │
+                         failed
+```
+
+- `start` — `stopped → pending` (re-provision)
+- `stop` — `running → stopping`
+- `terminate` — any non-terminal state (including `failed`) → `terminating → terminated`
+- Invalid transitions return `409`, unknown regions `400`, out-of-quota or out-of-capacity requests `409`.
+
+### Quotas and capacity
+
+Each organization has a quota (default: 20 instances, 16 vCPU, 32 GiB, 500 GB). Region capacity is tracked as running consumption and enforced at create time:
+
+| Region | vCPU | Memory | Disk |
+|--------|------|--------|------|
+| `us-east-1` | 64 | 128 GiB | 2000 GB |
+| `us-west-1` | 48 | 96 GiB | 1500 GB |
+| `eu-west-1` | 32 | 64 GiB | 1000 GB |
 
 ## Quick Start
 
@@ -25,17 +71,26 @@ set POSTGRES_PASSWORD=iaas
 go run ./cmd/server
 ```
 > The server reads the database connection from `DATABASE_URL`, or builds it from `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_DB` (see `.env.example`). Never hardcode credentials in source.
-### open psql in cmd
+
+### psql
 ```
 docker compose exec -it postgres psql -U iaas -d iaas
 ```
-### psql operations
-```
-\q | quit
-\x | format output
-\d | show table
-\dt | list tables & relations
-```
+`\q` quit · `\x` expanded output · `\d` describe · `\dt` list tables
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENV` | `development` | `development`, `staging`, or `production`. Outside development the server refuses to boot with a placeholder or short `JWT_SECRET`. |
+| `PORT` | `8080` | HTTP listen port |
+| `DATABASE_URL` | — | Postgres DSN. Use `sslmode=verify-full` (or `require`) outside local dev, never `disable`. |
+| `JWT_SECRET` | `change-me-in-production` | Signing secret. Generate with `openssl rand -hex 32`. |
+| `JWT_ISSUER` | `iaas-platform` | Token issuer claim |
+| `JWT_EXPIRES_IN` | `86400` | Token lifetime (seconds) |
+| `PROVISIONING_DELAY_SECONDS` | `5` | Simulated time to `running` |
+| `STOP_DELAY_SECONDS` | `3` | Simulated time to `stopped` |
+| `RECONCILE_INTERVAL_SECONDS` | `2` | Reconciler tick interval |
 
 ## API Endpoints
 
@@ -57,9 +112,9 @@ docker compose exec -it postgres psql -U iaas -d iaas
 | POST | `/api/v1/orgs/{id}/instances` | Create instance |
 | GET | `/api/v1/orgs/{id}/instances` | List instances |
 | GET | `/api/v1/orgs/{id}/instances/{iid}` | Get instance |
-| POST | `/api/v1/orgs/{id}/instances/{iid}/start` | Start instance |
-| POST | `/api/v1/orgs/{id}/instances/{iid}/stop` | Stop instance |
-| POST | `/api/v1/orgs/{id}/instances/{iid}/terminate` | Terminate instance |
+| POST | `/api/v1/orgs/{id}/instances/{iid}/start` | Start instance (`202` accepted) |
+| POST | `/api/v1/orgs/{id}/instances/{iid}/stop` | Stop instance (`202` accepted) |
+| POST | `/api/v1/orgs/{id}/instances/{iid}/terminate` | Terminate instance (`202` accepted) |
 | GET | `/api/v1/orgs/{id}/billing/usage` | Get usage summary |
 | POST | `/api/v1/orgs/{id}/billing/usage` | Record usage (`instance_id`, `resource_type`, `quantity`) |
 | GET | `/api/v1/orgs/{id}/billing/invoices` | List invoices |
@@ -67,6 +122,8 @@ docker compose exec -it postgres psql -U iaas -d iaas
 | GET | `/api/v1/orgs/{id}/billing/invoices/{invoiceID}` | Get invoice line items |
 
 Valid `resource_type` values: `cpu_hours`, `memory_gb_hours`, `disk_gb_hours`.
+
+An OpenAPI description is available at [`openapi.yaml`](openapi.yaml).
 
 ## Testing
 
@@ -77,7 +134,7 @@ go test ./...
 go vet ./...
 ```
 
-`gofmt -l .` should print nothing. CI runs formatting, vet, tests (with the race detector), and a build on every push and pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
+`gofmt -l .` should print nothing. CI runs formatting, vet, tests (with the race detector), a build, and [CodeQL](https://codeql.github.com/) analysis on every push and pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 
 ## Tech Stack
 
@@ -94,7 +151,7 @@ cmd/server/main.go              # Entry point
 internal/
   auth/                         # Authentication (JWT, handlers, middleware)
   billing/                      # Usage tracking and invoice generation
-  compute/                      # VM/container lifecycle management
+  compute/                      # Provider abstraction, lifecycle service, reconciler
   config/                       # Environment-based configuration
   database/                     # PostgreSQL repositories and migrations
   middleware/                   # CORS, logging, rate limiting
