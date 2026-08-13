@@ -1,0 +1,22 @@
+# gitleaks secret detection policy.
+# Run with: gitleaks detect --source . --config .gitleaks.toml
+
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for known-safe repository content"
+paths = [
+    "internal/dashboard/static/",
+    "**/*_test.go",
+    "internal/database/migrations/",
+]
+regexes = [
+    # Documented placeholders that are intentionally not real secrets
+    "change-me-to-a-secure-random-string",
+    "change-me-in-production",
+    # Sample credentials used only for local development (docker-compose)
+    "postgres://iaas:iaas@",
+]
