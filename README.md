@@ -1,5 +1,7 @@
 # IaaS Platform
 
+![CI](https://github.com/ogc16/iaas-platform/actions/workflows/ci.yml/badge.svg)
+
 A Go-based Infrastructure-as-a-Service platform with multi-tenant organizations, compute resource management, API key authentication, rate limiting, and usage-based billing.
 
 ## Features
@@ -59,7 +61,23 @@ docker compose exec -it postgres psql -U iaas -d iaas
 | POST | `/api/v1/orgs/{id}/instances/{iid}/stop` | Stop instance |
 | POST | `/api/v1/orgs/{id}/instances/{iid}/terminate` | Terminate instance |
 | GET | `/api/v1/orgs/{id}/billing/usage` | Get usage summary |
+| POST | `/api/v1/orgs/{id}/billing/usage` | Record usage (`instance_id`, `resource_type`, `quantity`) |
 | GET | `/api/v1/orgs/{id}/billing/invoices` | List invoices |
+| POST | `/api/v1/orgs/{id}/billing/invoices/generate` | Generate an invoice for the current month |
+| GET | `/api/v1/orgs/{id}/billing/invoices/{invoiceID}` | Get invoice line items |
+
+Valid `resource_type` values: `cpu_hours`, `memory_gb_hours`, `disk_gb_hours`.
+
+## Testing
+
+Unit tests cover the auth, organizations, compute, and billing services and handlers, the JWT and rate-limit middleware, configuration, and routing. They run against in-memory fakes — no database required.
+
+```bash
+go test ./...
+go vet ./...
+```
+
+`gofmt -l .` should print nothing. CI runs formatting, vet, tests (with the race detector), and a build on every push and pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 
 ## Tech Stack
 
