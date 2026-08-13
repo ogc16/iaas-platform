@@ -10,6 +10,9 @@ type ComputeInstance struct {
 	InstanceType   string    `json:"instance_type"`
 	Status         string    `json:"status"`
 	Region         string    `json:"region"`
+	ProviderID     string    `json:"provider_id"`
+	Image          string    `json:"image"`
+	Port           int       `json:"port"`
 	CPUCores       int       `json:"cpu_cores"`
 	MemoryMB       int       `json:"memory_mb"`
 	DiskGB         int       `json:"disk_gb"`
@@ -18,19 +21,39 @@ type ComputeInstance struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+// Instance lifecycle states. The control plane records user intent and the
+// reconciler advances transient states based on the provider's reported state.
+const (
+	InstanceStatusPending     = "pending"
+	InstanceStatusRunning     = "running"
+	InstanceStatusStopping    = "stopping"
+	InstanceStatusStopped     = "stopped"
+	InstanceStatusTerminating = "terminating"
+	InstanceStatusTerminated  = "terminated"
+	InstanceStatusFailed      = "failed"
+)
+
 const (
 	InstanceTypeVM        = "vm"
 	InstanceTypeContainer = "container"
-
-	InstanceStatusRunning    = "running"
-	InstanceStatusStopped    = "stopped"
-	InstanceStatusTerminated = "terminated"
 )
+
+// ActiveStates are the non-terminal states that consume quota and capacity.
+var ActiveStates = []string{
+	InstanceStatusPending,
+	InstanceStatusRunning,
+	InstanceStatusStopping,
+	InstanceStatusStopped,
+	InstanceStatusTerminating,
+	InstanceStatusFailed,
+}
 
 type CreateInstanceRequest struct {
 	Name         string `json:"name"`
 	InstanceType string `json:"instance_type"`
 	Region       string `json:"region"`
+	Image        string `json:"image"`
+	Port         int    `json:"port"`
 	CPUCores     int    `json:"cpu_cores"`
 	MemoryMB     int    `json:"memory_mb"`
 	DiskGB       int    `json:"disk_gb"`
