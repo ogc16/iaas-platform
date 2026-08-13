@@ -25,12 +25,13 @@ The API layer is thin. Services own the business rules (membership checks, quota
 
 ## Features
 
-- **User Authentication** — Signup/login with JWT (HS256) and bcrypt passwords; API key access via `X-API-Key`
+- **User Authentication** — Signup/login with JWT (HS256) and bcrypt passwords; API key access via `X-API-Key`. API keys are shown once at signup and stored as SHA-256 hashes; passwords use configurable bcrypt cost
 - **Multi-Tenant Organizations** — Create orgs, invite members, role-based access
 - **Compute Lifecycle** — Async state machine with start/stop/terminate; per-org quotas and per-region capacity enforcement
 - **Pluggable Provider** — `compute.Provider` interface; default `SimProvider` is a durable, wall-clock simulation
 - **Usage-Based Billing** — Track CPU, memory, and disk usage; generate invoices
 - **Rate Limiting** — Token-bucket limiter per IP/API key
+- **Operational** — `/healthz` liveness and `/readyz` readiness probes, baseline security headers, request-ID echo in logs, paginated list endpoints (`limit`/`offset` + `X-Total-Count`), configurable connection pool
 
 ## Compute Lifecycle
 
@@ -88,6 +89,11 @@ docker compose exec -it postgres psql -U iaas -d iaas
 | `JWT_SECRET` | `change-me-in-production` | Signing secret. Generate with `openssl rand -hex 32`. |
 | `JWT_ISSUER` | `iaas-platform` | Token issuer claim |
 | `JWT_EXPIRES_IN` | `86400` | Token lifetime (seconds) |
+| `BCRYPT_COST` | `12` | Password hashing cost (4–15). Keep ≥ 10 in production. |
+| `DB_MAX_CONNS` | `20` | Maximum connections in the pgx pool |
+| `DB_MIN_CONNS` | `2` | Idle connections kept warm in the pool |
+| `TLS_CERT_FILE` | — | Path to the TLS certificate. `TLS_KEY_FILE` must be set too; when both are set the server serves HTTPS and enables HSTS. |
+| `TLS_KEY_FILE` | — | Path to the TLS private key (pair with `TLS_CERT_FILE`) |
 | `PROVISIONING_DELAY_SECONDS` | `5` | Simulated time to `running` |
 | `STOP_DELAY_SECONDS` | `3` | Simulated time to `stopped` |
 | `RECONCILE_INTERVAL_SECONDS` | `2` | Reconciler tick interval |
@@ -97,6 +103,8 @@ docker compose exec -it postgres psql -U iaas -d iaas
 ### Public
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/healthz` | Liveness probe (always 200) |
+| GET | `/readyz` | Readiness probe (200 when the DB is reachable, else 503) |
 | POST | `/api/v1/auth/signup` | Create account |
 | POST | `/api/v1/auth/login` | Login |
 
@@ -123,38 +131,42 @@ docker compose exec -it postgres psql -U iaas -d iaas
 
 Valid `resource_type` values: `cpu_hours`, `memory_gb_hours`, `disk_gb_hours`.
 
+List endpoints (`/orgs`, `/orgs/{id}/members`, `/orgs/{id}/instances`, `/orgs/{id}/billing/invoices`) accept `limit` (default 50, max 100) and `offset` query parameters and return the total count in the `X-Total-Count` response header.
+
 An OpenAPI description is available at [`openapi.yaml`](openapi.yaml).
 
 ## Testing
 
-Unit tests cover the auth, organizations, compute, and billing services and handlers, the JWT and rate-limit middleware, configuration, and routing. They run against in-memory fakes — no database required.
+Unit tests cover the auth, organizations, compute, and billing services and handlers, the JWT and rate-limit middleware, configuration, health probes, security headers, and routing. They run against in-memory fakes — no database required.
 
 ```bash
 go test ./...
 go vet ./...
 ```
 
-`gofmt -l .` should print nothing. CI runs formatting, vet, tests (with the race detector), a build, and [CodeQL](https://codeql.github.com/) analysis on every push and pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
+`gofmt -l .` should print nothing. CI runs formatting, vet, tests (with the race detector), coverage, a build, a gitleaks secret scan, and [CodeQL](https://codeql.github.com/) analysis on every push and pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 
 ## Tech Stack
 
 - **Language:** Go 1.26
 - **Router:** chi/v5
 - **Database:** PostgreSQL 16 (pgx/v5)
-- **Auth:** JWT (HS256) + API keys
-- **Infrastructure:** Docker Compose
+- **Auth:** JWT (HS256) + hashed API keys (SHA-256 at rest)
+- **Infrastructure:** Docker Compose, multi-stage Dockerfile (distroless runtime), Makefile
 
 ## Project Structure
 
 ```
-cmd/server/main.go              # Entry point
+cmd/server/main.go              # Entry point (health probes, TLS, graceful shutdown)
+cmd/migrate/main.go             # Standalone migration runner
 internal/
   auth/                         # Authentication (JWT, handlers, middleware)
   billing/                      # Usage tracking and invoice generation
   compute/                      # Provider abstraction, lifecycle service, reconciler
   config/                       # Environment-based configuration
   database/                     # PostgreSQL repositories and migrations
-  middleware/                   # CORS, logging, rate limiting
+  health/                       # /healthz and /readyz probes
+  middleware/                   # CORS, logging, rate limiting, security headers
   models/                       # Shared data models
   organizations/                # Multi-tenant org management
   router/                       # Route definitions

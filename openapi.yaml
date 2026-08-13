@@ -9,12 +9,61 @@ info:
   version: 1.0.0
 servers:
   - url: http://localhost:8080/api/v1
+    description: Control-plane API
+  - url: http://localhost:8080
+    description: Health probes (served on the server root)
 tags:
   - name: auth
   - name: organizations
   - name: compute
   - name: billing
+  - name: health
 paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: Always returns 200 while the process is up. Never depends on external state.
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      description: Returns 200 when the database is reachable, 503 otherwise.
+      responses:
+        '200':
+          description: Server can serve traffic
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '503':
+          description: Database unreachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unavailable
+                  reason:
+                    type: string
+                    example: database unreachable
   /auth/signup:
     post:
       tags: [auth]
@@ -103,9 +152,15 @@ paths:
       security:
         - bearerAuth: []
         - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Organizations
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
           content:
             application/json:
               schema:
@@ -160,9 +215,15 @@ paths:
       security:
         - bearerAuth: []
         - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Members
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
           content:
             application/json:
               schema:
@@ -203,9 +264,15 @@ paths:
       security:
         - bearerAuth: []
         - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Instances
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
           content:
             application/json:
               schema:
@@ -338,9 +405,15 @@ paths:
       security:
         - bearerAuth: []
         - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Invoices
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
           content:
             application/json:
               schema:
@@ -383,6 +456,12 @@ paths:
                 items:
                   $ref: '#/components/schemas/InvoiceLineItem'
 components:
+  headers:
+    XTotalCount:
+      description: Total number of items available, not just the current page
+      schema:
+        type: integer
+        format: int64
   securitySchemes:
     bearerAuth:
       type: http
@@ -393,6 +472,23 @@ components:
       in: header
       name: X-API-Key
   parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return (default 50, max 100)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: Number of items to skip before returning results
+      schema:
+        type: integer
+        minimum: 0
     OrgID:
       name: orgID
       in: path
@@ -471,6 +567,9 @@ components:
       properties:
         token:
           type: string
+        api_key:
+          type: string
+          description: Raw API key. Returned only once, on signup; the server stores a SHA-256 hash.
         user:
           $ref: '#/components/schemas/User'
     User:
@@ -484,8 +583,6 @@ components:
         name:
           type: string
         role:
-          type: string
-        api_key:
           type: string
         organization:
           type: string
