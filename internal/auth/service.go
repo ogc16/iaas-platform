@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -24,16 +25,31 @@ type UserStore interface {
 	Create(ctx context.Context, u *models.User) error
 	FindByEmail(ctx context.Context, email string) (*models.User, error)
 	FindByID(ctx context.Context, id int64) (*models.User, error)
-	FindByAPIKey(ctx context.Context, apiKey string) (*models.User, error)
+	FindByAPIKeyHash(ctx context.Context, apiKeyHash string) (*models.User, error)
 }
 
 type Service struct {
-	repo UserStore
-	jwt  *JWTService
+	repo       UserStore
+	jwt        *JWTService
+	bcryptCost int
 }
 
-func NewService(repo UserStore, jwt *JWTService) *Service {
-	return &Service{repo: repo, jwt: jwt}
+// ServiceOption configures a Service.
+type ServiceOption func(*Service)
+
+// WithBcryptCost overrides the bcrypt work factor used when hashing passwords.
+// The default is bcrypt.DefaultCost; production deployments should raise it
+// via BCRYPT_COST.
+func WithBcryptCost(cost int) ServiceOption {
+	return func(s *Service) { s.bcryptCost = cost }
+}
+
+func NewService(repo UserStore, jwt *JWTService, opts ...ServiceOption) *Service {
+	s := &Service{repo: repo, jwt: jwt, bcryptCost: bcrypt.DefaultCost}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models.AuthResponse, error) {
@@ -45,7 +61,7 @@ func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models
 		return nil, ErrEmailTaken
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), s.bcryptCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
@@ -60,7 +76,7 @@ func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models
 		PasswordHash: string(hash),
 		Name:         req.Name,
 		Role:         "user",
-		APIKey:       apiKey,
+		APIKey:       HashAPIKey(apiKey),
 		Organization: req.Organization,
 	}
 
@@ -73,7 +89,9 @@ func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models
 		return nil, fmt.Errorf("generate token: %w", err)
 	}
 
-	return &models.AuthResponse{Token: token, User: *user}, nil
+	// The raw key is returned exactly once, here at signup. Only its digest
+	// exists anywhere else.
+	return &models.AuthResponse{Token: token, APIKey: apiKey, User: *user}, nil
 }
 
 func (s *Service) Login(ctx context.Context, req models.LoginRequest) (*models.AuthResponse, error) {
@@ -113,8 +131,8 @@ func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
 }
 
 func (s *Service) Authenticate(ctx context.Context, tokenString string) (*Claims, error) {
-	if len(tokenString) > 5 && tokenString[:5] == "iaas_" {
-		user, err := s.repo.FindByAPIKey(ctx, tokenString)
+	if strings.HasPrefix(tokenString, "iaas_") {
+		user, err := s.repo.FindByAPIKeyHash(ctx, HashAPIKey(tokenString))
 		if err != nil {
 			if errors.Is(err, database.ErrNotFound) {
 				return nil, ErrInvalidCreds
@@ -137,4 +155,12 @@ func generateAPIKey() (string, error) {
 	}
 	hash := sha256.Sum256(bytes)
 	return "iaas_" + hex.EncodeToString(hash[:16]), nil
+}
+
+// HashAPIKey returns the SHA-256 hex digest of an API key. Only digests are
+// stored in the database; the raw key is returned to the client exactly once,
+// at signup.
+func HashAPIKey(apiKey string) string {
+	sum := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(sum[:])
 }

@@ -14,7 +14,7 @@ import (
 type fakeUserStore struct {
 	usersByEmail map[string]*models.User
 	usersByID    map[int64]*models.User
-	usersByKey   map[string]*models.User
+	usersByHash  map[string]*models.User
 	nextID       int64
 	findErr      error
 	createErr    error
@@ -24,7 +24,7 @@ func newFakeUserStore() *fakeUserStore {
 	return &fakeUserStore{
 		usersByEmail: map[string]*models.User{},
 		usersByID:    map[int64]*models.User{},
-		usersByKey:   map[string]*models.User{},
+		usersByHash:  map[string]*models.User{},
 	}
 }
 
@@ -36,7 +36,7 @@ func (f *fakeUserStore) Create(ctx context.Context, u *models.User) error {
 	u.ID = f.nextID
 	f.usersByID[u.ID] = u
 	f.usersByEmail[u.Email] = u
-	f.usersByKey[u.APIKey] = u
+	f.usersByHash[u.APIKey] = u
 	return nil
 }
 
@@ -60,11 +60,11 @@ func (f *fakeUserStore) FindByID(ctx context.Context, id int64) (*models.User, e
 	return nil, database.ErrNotFound
 }
 
-func (f *fakeUserStore) FindByAPIKey(ctx context.Context, apiKey string) (*models.User, error) {
+func (f *fakeUserStore) FindByAPIKeyHash(ctx context.Context, apiKeyHash string) (*models.User, error) {
 	if f.findErr != nil {
 		return nil, f.findErr
 	}
-	if u, ok := f.usersByKey[apiKey]; ok {
+	if u, ok := f.usersByHash[apiKeyHash]; ok {
 		return u, nil
 	}
 	return nil, database.ErrNotFound
@@ -87,13 +87,13 @@ func seedUser(t *testing.T, store *fakeUserStore, email, password string) *model
 		PasswordHash: string(hash),
 		Name:         "Test User",
 		Role:         "user",
-		APIKey:       "iaas_seeded",
+		APIKey:       HashAPIKey("iaas_seeded"),
 	}
 	store.nextID++
 	u.ID = store.nextID
 	store.usersByID[u.ID] = u
 	store.usersByEmail[u.Email] = u
-	store.usersByKey[u.APIKey] = u
+	store.usersByHash[u.APIKey] = u
 	return u
 }
 
@@ -119,8 +119,15 @@ func TestService_Signup_Success(t *testing.T) {
 	if resp.User.PasswordHash == "hunter2" || resp.User.PasswordHash == "" {
 		t.Fatal("password must be stored hashed")
 	}
-	if !strings.HasPrefix(resp.User.APIKey, "iaas_") {
-		t.Fatalf("expected API key, got %q", resp.User.APIKey)
+	if !strings.HasPrefix(resp.APIKey, "iaas_") {
+		t.Fatalf("expected raw API key in response, got %q", resp.APIKey)
+	}
+	stored := store.usersByEmail["alice@example.com"]
+	if stored.APIKey == resp.APIKey {
+		t.Fatal("API key must not be stored in plaintext")
+	}
+	if stored.APIKey != HashAPIKey(resp.APIKey) {
+		t.Fatalf("expected stored API key to be the SHA-256 digest, got %q", stored.APIKey)
 	}
 	if _, ok := store.usersByEmail["alice@example.com"]; !ok {
 		t.Fatal("expected user to be persisted")
@@ -138,6 +145,44 @@ func TestService_Signup_DuplicateEmail(t *testing.T) {
 	})
 	if !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("expected ErrEmailTaken, got %v", err)
+	}
+}
+
+func TestService_Signup_UsesConfiguredBcryptCost(t *testing.T) {
+	store := newFakeUserStore()
+	jwt := NewJWTService("test-secret", "test-issuer", 3600)
+	svc := NewService(store, jwt, WithBcryptCost(13))
+
+	if _, err := svc.Signup(context.Background(), models.SignupRequest{
+		Email:    "alice@example.com",
+		Password: "hunter2",
+		Name:     "Alice",
+	}); err != nil {
+		t.Fatalf("Signup: %v", err)
+	}
+
+	cost, err := bcrypt.Cost([]byte(store.usersByEmail["alice@example.com"].PasswordHash))
+	if err != nil {
+		t.Fatalf("bcrypt.Cost: %v", err)
+	}
+	if cost != 13 {
+		t.Fatalf("expected password hashed with cost 13, got %d", cost)
+	}
+}
+
+func TestService_Login_DoesNotExposeAPIKey(t *testing.T) {
+	svc, store, _ := newTestService()
+	seedUser(t, store, "alice@example.com", "hunter2")
+
+	resp, err := svc.Login(context.Background(), models.LoginRequest{
+		Email:    "alice@example.com",
+		Password: "hunter2",
+	})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if resp.APIKey != "" {
+		t.Fatalf("raw API key must only be returned at signup, got %q", resp.APIKey)
 	}
 }
 

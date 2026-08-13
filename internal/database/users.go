@@ -75,12 +75,14 @@ func (r *UserRepository) FindByID(ctx context.Context, id int64) (*models.User, 
 	return u, nil
 }
 
-func (r *UserRepository) FindByAPIKey(ctx context.Context, apiKey string) (*models.User, error) {
+// FindByAPIKeyHash looks up a user by the SHA-256 digest of their API key.
+// Raw keys are never stored or queried directly; the caller hashes first.
+func (r *UserRepository) FindByAPIKeyHash(ctx context.Context, apiKeyHash string) (*models.User, error) {
 	query := `SELECT id, email, password_hash, name, role, api_key, organization, created_at, updated_at
 		FROM users WHERE api_key = $1`
 
 	u := &models.User{}
-	err := r.pool.QueryRow(ctx, query, apiKey).Scan(
+	err := r.pool.QueryRow(ctx, query, apiKeyHash).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role,
 		&u.APIKey, &u.Organization, &u.CreatedAt, &u.UpdatedAt,
 	)

@@ -8,7 +8,7 @@ type User struct {
 	PasswordHash string    `json:"-"`
 	Name         string    `json:"name"`
 	Role         string    `json:"role"`
-	APIKey       string    `json:"api_key,omitempty"`
+	APIKey       string    `json:"-"`
 	Organization string    `json:"organization"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -28,5 +28,8 @@ type LoginRequest struct {
 
 type AuthResponse struct {
 	Token string `json:"token"`
-	User  User   `json:"user"`
+	// APIKey is the raw API key, returned only once at signup. It is never
+	// stored; the database keeps a SHA-256 digest instead.
+	APIKey string `json:"api_key,omitempty"`
+	User   User   `json:"user"`
 }
