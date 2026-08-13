@@ -24,14 +24,28 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
+      - name: Secret scan (gitleaks)
+        run: |
+          go run github.com/gitleaks/gitleaks/v8@latest detect \
+            --source . \
+            --config .gitleaks.toml \
+            --redact \
+            --no-banner
+
       - name: Format check
         run: test -z "$(gofmt -l .)"
 
       - name: Vet
         run: go vet ./...
 
-      - name: Test
+      - name: Test (race)
         run: go test -race -count=1 ./...
+
+      - name: Coverage
+        run: go test -count=1 -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -n 1
 
       - name: Build
         run: go build ./...
