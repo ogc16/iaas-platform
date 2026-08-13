@@ -27,7 +27,7 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
-		os.Exit(1)
+		panic(err)
 	}
 
 	// Fix 1: Short-lived context scoped strictly to the connection handshake

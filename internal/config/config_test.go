@@ -16,6 +16,10 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("POSTGRES_DB", "")
 	t.Setenv("JWT_SECRET", "")
 	t.Setenv("JWT_ISSUER", "")
+	t.Setenv("ENV", "")
+	t.Setenv("PROVISIONING_DELAY_SECONDS", "")
+	t.Setenv("STOP_DELAY_SECONDS", "")
+	t.Setenv("RECONCILE_INTERVAL_SECONDS", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -27,6 +31,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.JWTExpiresIn != 86400 {
 		t.Fatalf("expected default JWT expiry 86400, got %d", cfg.JWTExpiresIn)
+	}
+	if cfg.Environment != DefaultEnvironment {
+		t.Fatalf("expected default environment %q, got %q", DefaultEnvironment, cfg.Environment)
 	}
 	if !strings.HasPrefix(cfg.DatabaseURL, "postgres://iaas:@localhost:5432/iaas") {
 		t.Fatalf("unexpected default database URL: %q", cfg.DatabaseURL)
@@ -70,5 +77,58 @@ func TestLoad_InvalidJWTExpiry(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected an error for an invalid JWT_EXPIRES_IN")
+	}
+}
+
+func TestLoad_ProductionRejectsEnvExamplePlaceholder(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("JWT_SECRET", "change-me-to-a-secure-random-string")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an error for the .env.example placeholder secret in production")
+	}
+}
+
+func TestLoad_ProductionRejectsCodeDefaultSecret(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("JWT_SECRET", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an error for the code-default secret in production")
+	}
+}
+
+func TestLoad_ProductionRejectsShortSecret(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("JWT_SECRET", "short-secret")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an error for a short secret in production")
+	}
+}
+
+func TestLoad_ProductionAcceptsStrongSecret(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Environment != "production" {
+		t.Fatalf("expected environment production, got %q", cfg.Environment)
+	}
+}
+
+func TestLoad_DevelopmentAllowsPlaceholder(t *testing.T) {
+	t.Setenv("ENV", "development")
+	t.Setenv("JWT_SECRET", "change-me-to-a-secure-random-string")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Environment != "development" {
+		t.Fatalf("expected environment development, got %q", cfg.Environment)
 	}
 }

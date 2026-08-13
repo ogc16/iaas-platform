@@ -7,12 +7,28 @@ import (
 	"time"
 )
 
+const (
+	DefaultEnvironment = "development"
+	DefaultJWTSecret   = "change-me-in-production"
+	MinJWTSecretLength = 32
+)
+
+// placeholderJWTSecrets are well-known placeholder values that must never be
+// used to sign tokens outside development. The first entry matches the value
+// documented in .env.example; the second is the code default.
+var placeholderJWTSecrets = map[string]bool{
+	"change-me-to-a-secure-random-string": true,
+	DefaultJWTSecret:                      true,
+	"":                                    true,
+}
+
 type Config struct {
 	Port              int
 	DatabaseURL       string
 	JWTSecret         string
 	JWTIssuer         string
 	JWTExpiresIn      int
+	Environment       string
 	ProvisioningDelay time.Duration
 	StopDelay         time.Duration
 	ReconcileInterval time.Duration
@@ -42,16 +58,38 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid RECONCILE_INTERVAL_SECONDS: %w", err)
 	}
 
-	return &Config{
+	environment := getEnv("ENV", DefaultEnvironment)
+	cfg := &Config{
 		Port:              port,
 		DatabaseURL:       databaseURL(),
-		JWTSecret:         getEnv("JWT_SECRET", "change-me-in-production"),
+		JWTSecret:         getEnv("JWT_SECRET", DefaultJWTSecret),
 		JWTIssuer:         getEnv("JWT_ISSUER", "iaas-platform"),
 		JWTExpiresIn:      jwtExpiresIn,
+		Environment:       environment,
 		ProvisioningDelay: provisioningDelay,
 		StopDelay:         stopDelay,
 		ReconcileInterval: reconcileInterval,
-	}, nil
+	}
+
+	// Refuse to boot outside development with a weak or placeholder signing
+	// secret. A leaked or default JWT secret would let anyone forge tokens.
+	if environment != DefaultEnvironment {
+		if err := validateProductionSecrets(cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	return cfg, nil
+}
+
+func validateProductionSecrets(cfg *Config) error {
+	if placeholderJWTSecrets[cfg.JWTSecret] {
+		return fmt.Errorf("JWT_SECRET must be a strong random value in %s mode; refusing to boot with a placeholder secret", cfg.Environment)
+	}
+	if len(cfg.JWTSecret) < MinJWTSecretLength {
+		return fmt.Errorf("JWT_SECRET must be at least %d characters in %s mode (got %d)", MinJWTSecretLength, cfg.Environment, len(cfg.JWTSecret))
+	}
+	return nil
 }
 
 func seconds(s string) (time.Duration, error) {
