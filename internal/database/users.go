@@ -2,9 +2,11 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ogc16/iaas-platform/internal/models"
 )
@@ -47,6 +49,9 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models
 		&u.APIKey, &u.Organization, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("find user by email: %w", err)
 	}
 	return u, nil
@@ -62,6 +67,9 @@ func (r *UserRepository) FindByID(ctx context.Context, id int64) (*models.User, 
 		&u.APIKey, &u.Organization, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("find user by id: %w", err)
 	}
 	return u, nil
@@ -77,6 +85,9 @@ func (r *UserRepository) FindByAPIKey(ctx context.Context, apiKey string) (*mode
 		&u.APIKey, &u.Organization, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("find user by api key: %w", err)
 	}
 	return u, nil

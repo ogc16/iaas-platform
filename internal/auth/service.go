@@ -15,22 +15,32 @@ import (
 )
 
 var (
-	ErrEmailTaken    = errors.New("email already taken")
-	ErrInvalidCreds  = errors.New("invalid email or password")
-	ErrUserNotFound  = errors.New("user not found")
+	ErrEmailTaken   = errors.New("email already taken")
+	ErrInvalidCreds = errors.New("invalid email or password")
+	ErrUserNotFound = errors.New("user not found")
 )
 
-type Service struct {
-	repo  *database.UserRepository
-	jwt   *JWTService
+type UserStore interface {
+	Create(ctx context.Context, u *models.User) error
+	FindByEmail(ctx context.Context, email string) (*models.User, error)
+	FindByID(ctx context.Context, id int64) (*models.User, error)
+	FindByAPIKey(ctx context.Context, apiKey string) (*models.User, error)
 }
 
-func NewService(repo *database.UserRepository, jwt *JWTService) *Service {
+type Service struct {
+	repo UserStore
+	jwt  *JWTService
+}
+
+func NewService(repo UserStore, jwt *JWTService) *Service {
 	return &Service{repo: repo, jwt: jwt}
 }
 
 func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models.AuthResponse, error) {
-	existing, _ := s.repo.FindByEmail(ctx, req.Email)
+	existing, err := s.repo.FindByEmail(ctx, req.Email)
+	if err != nil && !errors.Is(err, database.ErrNotFound) {
+		return nil, fmt.Errorf("check existing user: %w", err)
+	}
 	if existing != nil {
 		return nil, ErrEmailTaken
 	}
@@ -69,7 +79,10 @@ func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models
 func (s *Service) Login(ctx context.Context, req models.LoginRequest) (*models.AuthResponse, error) {
 	user, err := s.repo.FindByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, ErrInvalidCreds
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrInvalidCreds
+		}
+		return nil, fmt.Errorf("find user: %w", err)
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
@@ -87,7 +100,10 @@ func (s *Service) Login(ctx context.Context, req models.LoginRequest) (*models.A
 func (s *Service) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	user, err := s.repo.FindByID(ctx, id)
 	if err != nil {
-		return nil, ErrUserNotFound
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("find user: %w", err)
 	}
 	return user, nil
 }
@@ -100,7 +116,10 @@ func (s *Service) Authenticate(ctx context.Context, tokenString string) (*Claims
 	if len(tokenString) > 5 && tokenString[:5] == "iaas_" {
 		user, err := s.repo.FindByAPIKey(ctx, tokenString)
 		if err != nil {
-			return nil, ErrInvalidCreds
+			if errors.Is(err, database.ErrNotFound) {
+				return nil, ErrInvalidCreds
+			}
+			return nil, fmt.Errorf("find user by api key: %w", err)
 		}
 		return &Claims{
 			UserID: user.ID,

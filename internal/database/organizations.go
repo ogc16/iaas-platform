@@ -2,9 +2,11 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ogc16/iaas-platform/internal/models"
 )
@@ -30,6 +32,9 @@ func (r *OrgRepository) FindByID(ctx context.Context, id int64) (*models.Organiz
 	org := &models.Organization{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(&org.ID, &org.Name, &org.Slug, &org.CreatedAt, &org.UpdatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("find org: %w", err)
 	}
 	return org, nil
@@ -40,6 +45,9 @@ func (r *OrgRepository) FindBySlug(ctx context.Context, slug string) (*models.Or
 	org := &models.Organization{}
 	err := r.pool.QueryRow(ctx, query, slug).Scan(&org.ID, &org.Name, &org.Slug, &org.CreatedAt, &org.UpdatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("find org by slug: %w", err)
 	}
 	return org, nil
@@ -75,6 +83,9 @@ func (r *OrgRepository) FindMember(ctx context.Context, orgID, userID int64) (*m
 	m := &models.OrgMember{}
 	err := r.pool.QueryRow(ctx, query, orgID, userID).Scan(&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.CreatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("find member: %w", err)
 	}
 	return m, nil

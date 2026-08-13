@@ -11,18 +11,32 @@ import (
 )
 
 var (
-	ErrSlugTaken   = errors.New("slug already taken")
-	ErrNotFound    = errors.New("organization not found")
-	ErrNotMember   = errors.New("not a member of this organization")
+	ErrSlugTaken         = errors.New("slug already taken")
+	ErrNotFound          = errors.New("organization not found")
+	ErrNotMember         = errors.New("not a member of this organization")
 	ErrUserAlreadyMember = errors.New("user is already a member")
 )
 
-type Service struct {
-	orgRepo  *database.OrgRepository
-	userRepo *database.UserRepository
+type OrgStore interface {
+	Create(ctx context.Context, org *models.Organization) error
+	FindByID(ctx context.Context, id int64) (*models.Organization, error)
+	FindBySlug(ctx context.Context, slug string) (*models.Organization, error)
+	AddMember(ctx context.Context, member *models.OrgMember) error
+	FindMember(ctx context.Context, orgID, userID int64) (*models.OrgMember, error)
+	FindMembers(ctx context.Context, orgID int64) ([]models.OrgMember, error)
+	ListByUser(ctx context.Context, userID int64) ([]models.Organization, error)
 }
 
-func NewService(orgRepo *database.OrgRepository, userRepo *database.UserRepository) *Service {
+type UserStore interface {
+	FindByEmail(ctx context.Context, email string) (*models.User, error)
+}
+
+type Service struct {
+	orgRepo  OrgStore
+	userRepo UserStore
+}
+
+func NewService(orgRepo OrgStore, userRepo UserStore) *Service {
 	return &Service{orgRepo: orgRepo, userRepo: userRepo}
 }
 
@@ -32,7 +46,10 @@ func (s *Service) Create(ctx context.Context, userID int64, req models.CreateOrg
 		slug = strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
 	}
 
-	existing, _ := s.orgRepo.FindBySlug(ctx, slug)
+	existing, err := s.orgRepo.FindBySlug(ctx, slug)
+	if err != nil && !errors.Is(err, database.ErrNotFound) {
+		return nil, fmt.Errorf("check existing slug: %w", err)
+	}
 	if existing != nil {
 		return nil, ErrSlugTaken
 	}
@@ -57,7 +74,10 @@ func (s *Service) Create(ctx context.Context, userID int64, req models.CreateOrg
 func (s *Service) GetByID(ctx context.Context, orgID, userID int64) (*models.Organization, error) {
 	member, err := s.orgRepo.FindMember(ctx, orgID, userID)
 	if err != nil {
-		return nil, ErrNotMember
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrNotMember
+		}
+		return nil, fmt.Errorf("find member: %w", err)
 	}
 	if member == nil {
 		return nil, ErrNotMember
@@ -65,7 +85,10 @@ func (s *Service) GetByID(ctx context.Context, orgID, userID int64) (*models.Org
 
 	org, err := s.orgRepo.FindByID(ctx, orgID)
 	if err != nil {
-		return nil, ErrNotFound
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("find org: %w", err)
 	}
 	return org, nil
 }
@@ -76,16 +99,28 @@ func (s *Service) List(ctx context.Context, userID int64) ([]models.Organization
 
 func (s *Service) InviteMember(ctx context.Context, orgID, userID int64, req models.InviteMemberRequest) (*models.OrgMember, error) {
 	caller, err := s.orgRepo.FindMember(ctx, orgID, userID)
-	if err != nil || caller.Role != "admin" {
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, fmt.Errorf("only admins can invite members")
+		}
+		return nil, fmt.Errorf("find caller membership: %w", err)
+	}
+	if caller.Role != "admin" {
 		return nil, fmt.Errorf("only admins can invite members")
 	}
 
 	targetUser, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, fmt.Errorf("user not found")
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("find user: %w", err)
 	}
 
-	existing, _ := s.orgRepo.FindMember(ctx, orgID, targetUser.ID)
+	existing, err := s.orgRepo.FindMember(ctx, orgID, targetUser.ID)
+	if err != nil && !errors.Is(err, database.ErrNotFound) {
+		return nil, fmt.Errorf("check existing member: %w", err)
+	}
 	if existing != nil {
 		return nil, ErrUserAlreadyMember
 	}
@@ -108,7 +143,10 @@ func (s *Service) InviteMember(ctx context.Context, orgID, userID int64, req mod
 
 func (s *Service) ListMembers(ctx context.Context, orgID, userID int64) ([]models.OrgMember, error) {
 	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
-		return nil, ErrNotMember
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrNotMember
+		}
+		return nil, fmt.Errorf("find member: %w", err)
 	}
 	return s.orgRepo.FindMembers(ctx, orgID)
 }

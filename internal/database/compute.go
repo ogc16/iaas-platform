@@ -2,9 +2,11 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ogc16/iaas-platform/internal/models"
 )
@@ -41,6 +43,9 @@ func (r *ComputeRepository) FindByID(ctx context.Context, id int64) (*models.Com
 		&inst.IPAddress, &inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("find instance: %w", err)
 	}
 	return inst, nil

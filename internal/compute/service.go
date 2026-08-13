@@ -15,18 +15,32 @@ var (
 	ErrNotInOrg = errors.New("not a member of this organization")
 )
 
-type Service struct {
-	repo    *database.ComputeRepository
-	orgRepo *database.OrgRepository
+type InstanceStore interface {
+	Create(ctx context.Context, inst *models.ComputeInstance) error
+	FindByID(ctx context.Context, id int64) (*models.ComputeInstance, error)
+	ListByOrg(ctx context.Context, orgID int64) ([]models.ComputeInstance, error)
+	UpdateStatus(ctx context.Context, id int64, status string) error
 }
 
-func NewService(repo *database.ComputeRepository, orgRepo *database.OrgRepository) *Service {
+type MembershipStore interface {
+	FindMember(ctx context.Context, orgID, userID int64) (*models.OrgMember, error)
+}
+
+type Service struct {
+	repo    InstanceStore
+	orgRepo MembershipStore
+}
+
+func NewService(repo InstanceStore, orgRepo MembershipStore) *Service {
 	return &Service{repo: repo, orgRepo: orgRepo}
 }
 
 func (s *Service) Create(ctx context.Context, orgID, userID int64, req models.CreateInstanceRequest) (*models.ComputeInstance, error) {
 	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
-		return nil, ErrNotInOrg
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrNotInOrg
+		}
+		return nil, fmt.Errorf("check membership: %w", err)
 	}
 
 	instanceType := req.InstanceType
@@ -70,19 +84,28 @@ func (s *Service) Create(ctx context.Context, orgID, userID int64, req models.Cr
 
 func (s *Service) List(ctx context.Context, orgID, userID int64) ([]models.ComputeInstance, error) {
 	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
-		return nil, ErrNotInOrg
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrNotInOrg
+		}
+		return nil, fmt.Errorf("check membership: %w", err)
 	}
 	return s.repo.ListByOrg(ctx, orgID)
 }
 
 func (s *Service) Get(ctx context.Context, orgID, instanceID, userID int64) (*models.ComputeInstance, error) {
 	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
-		return nil, ErrNotInOrg
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrNotInOrg
+		}
+		return nil, fmt.Errorf("check membership: %w", err)
 	}
 
 	inst, err := s.repo.FindByID(ctx, instanceID)
 	if err != nil {
-		return nil, ErrNotFound
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("find instance: %w", err)
 	}
 	if inst.OrganizationID != orgID {
 		return nil, ErrNotFound
