@@ -20,6 +20,11 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("PROVISIONING_DELAY_SECONDS", "")
 	t.Setenv("STOP_DELAY_SECONDS", "")
 	t.Setenv("RECONCILE_INTERVAL_SECONDS", "")
+	t.Setenv("BCRYPT_COST", "")
+	t.Setenv("DB_MAX_CONNS", "")
+	t.Setenv("DB_MIN_CONNS", "")
+	t.Setenv("TLS_CERT_FILE", "")
+	t.Setenv("TLS_KEY_FILE", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -34,6 +39,12 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.Environment != DefaultEnvironment {
 		t.Fatalf("expected default environment %q, got %q", DefaultEnvironment, cfg.Environment)
+	}
+	if cfg.BCryptCost != DefaultBCryptCost {
+		t.Fatalf("expected default bcrypt cost %d, got %d", DefaultBCryptCost, cfg.BCryptCost)
+	}
+	if cfg.DBMaxConns != DefaultDBMaxConns || cfg.DBMinConns != DefaultDBMinConns {
+		t.Fatalf("unexpected pool defaults: max=%d min=%d", cfg.DBMaxConns, cfg.DBMinConns)
 	}
 	if !strings.HasPrefix(cfg.DatabaseURL, "postgres://iaas:@localhost:5432/iaas") {
 		t.Fatalf("unexpected default database URL: %q", cfg.DatabaseURL)
@@ -130,5 +141,50 @@ func TestLoad_DevelopmentAllowsPlaceholder(t *testing.T) {
 	}
 	if cfg.Environment != "development" {
 		t.Fatalf("expected environment development, got %q", cfg.Environment)
+	}
+}
+
+func TestLoad_InvalidBCryptCost(t *testing.T) {
+	t.Setenv("BCRYPT_COST", "99")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an error for an out-of-range BCRYPT_COST")
+	}
+}
+
+func TestLoad_InvalidPoolSize(t *testing.T) {
+	t.Setenv("DB_MIN_CONNS", "50")
+	t.Setenv("DB_MAX_CONNS", "10")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an error when DB_MIN_CONNS exceeds DB_MAX_CONNS")
+	}
+}
+
+func TestLoad_TLSRequiresBothFiles(t *testing.T) {
+	t.Setenv("TLS_CERT_FILE", "/tls/server.crt")
+	t.Setenv("TLS_KEY_FILE", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an error when only TLS_CERT_FILE is set")
+	}
+}
+
+func TestLoad_RespectsNewEnvironment(t *testing.T) {
+	t.Setenv("BCRYPT_COST", "14")
+	t.Setenv("DB_MAX_CONNS", "100")
+	t.Setenv("DB_MIN_CONNS", "5")
+	t.Setenv("TLS_CERT_FILE", "/tls/server.crt")
+	t.Setenv("TLS_KEY_FILE", "/tls/server.key")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BCryptCost != 14 || cfg.DBMaxConns != 100 || cfg.DBMinConns != 5 {
+		t.Fatalf("unexpected config: %+v", cfg)
+	}
+	if cfg.TLSCertFile != "/tls/server.crt" || cfg.TLSKeyFile != "/tls/server.key" {
+		t.Fatalf("unexpected TLS config: %+v", cfg)
 	}
 }

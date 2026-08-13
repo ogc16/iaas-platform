@@ -11,6 +11,11 @@ const (
 	DefaultEnvironment = "development"
 	DefaultJWTSecret   = "change-me-in-production"
 	MinJWTSecretLength = 32
+	DefaultBCryptCost  = 12
+	MinBCryptCost      = 4
+	MaxBCryptCost      = 15
+	DefaultDBMaxConns  = 20
+	DefaultDBMinConns  = 2
 )
 
 // placeholderJWTSecrets are well-known placeholder values that must never be
@@ -25,13 +30,18 @@ var placeholderJWTSecrets = map[string]bool{
 type Config struct {
 	Port              int
 	DatabaseURL       string
+	DBMaxConns        int32
+	DBMinConns        int32
 	JWTSecret         string
 	JWTIssuer         string
 	JWTExpiresIn      int
+	BCryptCost        int
 	Environment       string
 	ProvisioningDelay time.Duration
 	StopDelay         time.Duration
 	ReconcileInterval time.Duration
+	TLSCertFile       string
+	TLSKeyFile        string
 }
 
 func Load() (*Config, error) {
@@ -58,17 +68,48 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid RECONCILE_INTERVAL_SECONDS: %w", err)
 	}
 
+	bcryptCost, err := strconv.Atoi(getEnv("BCRYPT_COST", strconv.Itoa(DefaultBCryptCost)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid BCRYPT_COST: %w", err)
+	}
+	if bcryptCost < MinBCryptCost || bcryptCost > MaxBCryptCost {
+		return nil, fmt.Errorf("BCRYPT_COST must be between %d and %d", MinBCryptCost, MaxBCryptCost)
+	}
+
+	dbMaxConns, err := strconv.Atoi(getEnv("DB_MAX_CONNS", strconv.Itoa(DefaultDBMaxConns)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid DB_MAX_CONNS: %w", err)
+	}
+	dbMinConns, err := strconv.Atoi(getEnv("DB_MIN_CONNS", strconv.Itoa(DefaultDBMinConns)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid DB_MIN_CONNS: %w", err)
+	}
+	if dbMinConns > dbMaxConns {
+		return nil, fmt.Errorf("DB_MIN_CONNS (%d) cannot exceed DB_MAX_CONNS (%d)", dbMinConns, dbMaxConns)
+	}
+
+	tlsCertFile := getEnv("TLS_CERT_FILE", "")
+	tlsKeyFile := getEnv("TLS_KEY_FILE", "")
+	if (tlsCertFile == "") != (tlsKeyFile == "") {
+		return nil, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
+	}
+
 	environment := getEnv("ENV", DefaultEnvironment)
 	cfg := &Config{
 		Port:              port,
 		DatabaseURL:       databaseURL(),
+		DBMaxConns:        int32(dbMaxConns),
+		DBMinConns:        int32(dbMinConns),
 		JWTSecret:         getEnv("JWT_SECRET", DefaultJWTSecret),
 		JWTIssuer:         getEnv("JWT_ISSUER", "iaas-platform"),
 		JWTExpiresIn:      jwtExpiresIn,
+		BCryptCost:        bcryptCost,
 		Environment:       environment,
 		ProvisioningDelay: provisioningDelay,
 		StopDelay:         stopDelay,
 		ReconcileInterval: reconcileInterval,
+		TLSCertFile:       tlsCertFile,
+		TLSKeyFile:        tlsKeyFile,
 	}
 
 	// Refuse to boot outside development with a weak or placeholder signing
