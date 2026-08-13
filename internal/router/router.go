@@ -74,7 +74,9 @@ func New(
 
 					r.Route("/billing", func(r chi.Router) {
 						r.Get("/usage", billingHandler.GetUsage)
+						r.Post("/usage", billingHandler.RecordUsage)
 						r.Get("/invoices", billingHandler.ListInvoices)
+						r.Post("/invoices/generate", billingHandler.GenerateInvoice)
 						r.Get("/invoices/{invoiceID}", billingHandler.GetInvoice)
 					})
 				})

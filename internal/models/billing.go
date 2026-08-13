@@ -11,10 +11,16 @@ type UsageRecord struct {
 	RecordedAt     time.Time `json:"recorded_at"`
 }
 
+type RecordUsageRequest struct {
+	InstanceID   int64   `json:"instance_id"`
+	ResourceType string  `json:"resource_type"`
+	Quantity     float64 `json:"quantity"`
+}
+
 const (
-	ResourceTypeCPUHours   = "cpu_hours"
-	ResourceTypeMemoryGBH  = "memory_gb_hours"
-	ResourceTypeDiskGBH    = "disk_gb_hours"
+	ResourceTypeCPUHours  = "cpu_hours"
+	ResourceTypeMemoryGBH = "memory_gb_hours"
+	ResourceTypeDiskGBH   = "disk_gb_hours"
 )
 
 type Invoice struct {
@@ -35,17 +41,17 @@ const (
 )
 
 type InvoiceLineItem struct {
-	ID            int64   `json:"id"`
-	InvoiceID     int64   `json:"invoice_id"`
-	Description   string  `json:"description"`
-	ResourceType  string  `json:"resource_type"`
-	Quantity      float64 `json:"quantity"`
-	UnitPriceCents int64  `json:"unit_price_cents"`
-	AmountCents   int64   `json:"amount_cents"`
+	ID             int64   `json:"id"`
+	InvoiceID      int64   `json:"invoice_id"`
+	Description    string  `json:"description"`
+	ResourceType   string  `json:"resource_type"`
+	Quantity       float64 `json:"quantity"`
+	UnitPriceCents int64   `json:"unit_price_cents"`
+	AmountCents    int64   `json:"amount_cents"`
 }
 
 type UsageSummary struct {
-	CPUHours     float64 `json:"cpu_hours"`
+	CPUHours      float64 `json:"cpu_hours"`
 	MemoryGBHours float64 `json:"memory_gb_hours"`
-	DiskGBHours  float64 `json:"disk_gb_hours"`
+	DiskGBHours   float64 `json:"disk_gb_hours"`
 }

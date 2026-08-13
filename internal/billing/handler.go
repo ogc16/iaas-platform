@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ogc16/iaas-platform/internal/auth"
 	"github.com/ogc16/iaas-platform/internal/httpx"
+	"github.com/ogc16/iaas-platform/internal/models"
 )
 
 type Handler struct {
@@ -16,6 +18,55 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+func (h *Handler) RecordUsage(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	orgID, err := strconv.ParseInt(chi.URLParam(r, "orgID"), 10, 64)
+	if err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": httpx.ErrInvalidOrgID})
+		return
+	}
+
+	var req models.RecordUsageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.svc.RecordUsage(r.Context(), orgID, req.InstanceID, req.ResourceType, req.Quantity); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, map[string]string{"status": "recorded"})
+}
+
+func (h *Handler) GenerateInvoice(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	orgID, err := strconv.ParseInt(chi.URLParam(r, "orgID"), 10, 64)
+	if err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": httpx.ErrInvalidOrgID})
+		return
+	}
+
+	inv, err := h.svc.GenerateInvoice(r.Context(), orgID)
+	if err != nil {
+		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httpx.ErrInternalServer})
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, inv)
 }
 
 func (h *Handler) GetUsage(w http.ResponseWriter, r *http.Request) {
