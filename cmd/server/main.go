@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/user/iaas-platform/internal/auth"
-	"github.com/user/iaas-platform/internal/billing"
-	"github.com/user/iaas-platform/internal/compute"
-	"github.com/user/iaas-platform/internal/config"
-	"github.com/user/iaas-platform/internal/database"
-	"github.com/user/iaas-platform/internal/organizations"
-	"github.com/user/iaas-platform/internal/router"
+	"github.com/ogc16/iaas-platform/internal/auth"
+	"github.com/ogc16/iaas-platform/internal/billing"
+	"github.com/ogc16/iaas-platform/internal/compute"
+	"github.com/ogc16/iaas-platform/internal/config"
+	"github.com/ogc16/iaas-platform/internal/database"
+	"github.com/ogc16/iaas-platform/internal/organizations"
+	"github.com/ogc16/iaas-platform/internal/router"
 )
 
 func main() {

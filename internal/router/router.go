@@ -7,12 +7,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
-	"github.com/user/iaas-platform/internal/auth"
-	"github.com/user/iaas-platform/internal/billing"
-	"github.com/user/iaas-platform/internal/compute"
-	"github.com/user/iaas-platform/internal/dashboard"
-	"github.com/user/iaas-platform/internal/middleware"
-	"github.com/user/iaas-platform/internal/organizations"
+	"github.com/ogc16/iaas-platform/internal/auth"
+	"github.com/ogc16/iaas-platform/internal/billing"
+	"github.com/ogc16/iaas-platform/internal/compute"
+	"github.com/ogc16/iaas-platform/internal/dashboard"
+	"github.com/ogc16/iaas-platform/internal/middleware"
+	"github.com/ogc16/iaas-platform/internal/organizations"
 )
 
 func New(

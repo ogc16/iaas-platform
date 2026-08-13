@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/user/iaas-platform/internal/database"
-	"github.com/user/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/database"
+	"github.com/ogc16/iaas-platform/internal/models"
 )
 
 var (

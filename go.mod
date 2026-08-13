@@ -1,4 +1,4 @@
-module github.com/user/iaas-platform
+module github.com/ogc16/iaas-platform
 
 go 1.26.4
 

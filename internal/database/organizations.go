@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/user/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/models"
 )
 
 type OrgRepository struct {

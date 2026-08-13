@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/user/iaas-platform/internal/auth"
-	"github.com/user/iaas-platform/internal/httpx"
+	"github.com/ogc16/iaas-platform/internal/auth"
+	"github.com/ogc16/iaas-platform/internal/httpx"
 )
 
 type Handler struct {
