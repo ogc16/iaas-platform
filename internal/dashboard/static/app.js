@@ -94,6 +94,8 @@ function escape(s) {
 function statusClass(status) {
   if (status === 'running') return 'green';
   if (status === 'stopped') return 'yellow';
+  if (status === 'pending' || status === 'stopping' || status === 'terminating') return 'blue';
+  if (status === 'terminated') return 'gray';
   return 'red';
 }
 
@@ -126,7 +128,7 @@ function instanceActionButtons(i) {
   const buttons = [];
   if (i.status === 'running') buttons.push(`<button class="btn btn-outline btn-sm" onclick="action('stop',${i.id})" title="Stop instance">⏸</button>`);
   if (i.status === 'stopped') buttons.push(`<button class="btn btn-outline btn-sm" onclick="action('start',${i.id})" title="Start instance">▶</button>`);
-  if (i.status !== 'terminated') buttons.push(`<button class="btn btn-danger btn-sm" onclick="confirmAction('terminate',${i.id})" title="Terminate instance">🗑</button>`);
+  if (i.status !== 'terminated' && i.status !== 'terminating') buttons.push(`<button class="btn btn-danger btn-sm" onclick="confirmAction('terminate',${i.id})" title="Terminate instance">🗑</button>`);
   return buttons.join(' ');
 }
 
@@ -156,8 +158,8 @@ function instanceModalActionButtons(instance) {
   const buttons = [];
   if (instance.status === 'running') buttons.push(`<button class="btn btn-outline" onclick="action('stop',${instance.id}); document.querySelector('.modal-overlay').remove()">⏸ Stop</button>`);
   if (instance.status === 'stopped') buttons.push(`<button class="btn btn-outline" onclick="action('start',${instance.id}); document.querySelector('.modal-overlay').remove()">▶ Start</button>`);
-  buttons.push(`<button class="btn btn-outline" onclick="copyToClipboard('${instance.ip_address || 'N/A'}')">📋 Copy IP</button>`);
-  if (instance.status !== 'terminated') buttons.push(`<button class="btn btn-danger" onclick="confirmAction('terminate',${instance.id}); document.querySelector('.modal-overlay').remove()">🗑 Terminate</button>`);
+  if (instance.ip_address) buttons.push(`<button class="btn btn-outline" onclick="copyToClipboard('${instance.ip_address}')">📋 Copy IP</button>`);
+  if (instance.status !== 'terminated' && instance.status !== 'terminating') buttons.push(`<button class="btn btn-danger" onclick="confirmAction('terminate',${instance.id}); document.querySelector('.modal-overlay').remove()">🗑 Terminate</button>`);
   return buttons.join(' ');
 }
 
@@ -507,12 +509,20 @@ window.showInstanceDetail = function(instanceId) {
           <div class="detail-value" style="font-family:monospace">${instance.ip_address || 'Not assigned'}</div>
         </div>
         <div class="detail-item">
+          <div class="detail-label">Image</div>
+          <div class="detail-value">${instance.image || 'debian-12'}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Provider ID</div>
+          <div class="detail-value" style="font-family:monospace">${instance.provider_id || '-'}</div>
+        </div>
+        <div class="detail-item">
           <div class="detail-label">Created</div>
           <div class="detail-value">${new Date(instance.created_at).toLocaleDateString()}</div>
         </div>
         <div class="detail-item">
-          <div class="detail-label">Uptime</div>
-          <div class="detail-value">${instance.status === 'running' ? 'Running' : 'Stopped'}</div>
+          <div class="detail-label">State</div>
+          <div class="detail-value">${instance.status}</div>
         </div>
       </div>
     </div>
@@ -727,11 +737,21 @@ window.showCreateInstance = function() {
         <label>Region *</label>
         <select id="inst-region">
           <option value="">Select region...</option>
-          <option value="us-east">US East (us-east-1)</option>
-          <option value="us-west">US West (us-west-2)</option>
-          <option value="eu-west">EU West (eu-west-1)</option>
-          <option value="ap-south">Asia Pacific (ap-south-1)</option>
+          <option value="us-east-1">US East (us-east-1)</option>
+          <option value="us-west-1">US West (us-west-1)</option>
+          <option value="eu-west-1">EU West (eu-west-1)</option>
         </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Image</label>
+        <input type="text" id="inst-image" placeholder="e.g., debian-12" value="debian-12" maxlength="64">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="number" id="inst-port" placeholder="e.g., 8080" min="0" max="65535">
       </div>
     </div>
 
@@ -843,6 +863,8 @@ window.createInstance = async function() {
   const cpu_cores = parseInt(document.getElementById('inst-cpu').value) || 1;
   const memory_mb = parseInt(document.getElementById('inst-memory').value) || 1024;
   const disk_gb = parseInt(document.getElementById('inst-disk').value) || 10;
+  const image = document.getElementById('inst-image').value.trim() || 'debian-12';
+  const port = parseInt(document.getElementById('inst-port').value) || 0;
   
   if (!name) return toast('Instance name is required', 'error');
   if (!instance_type) return toast('Instance type is required', 'error');
@@ -850,7 +872,7 @@ window.createInstance = async function() {
   
   const { ok, body } = await api(`/orgs/${state.currentOrg}/instances`, {
     method: 'POST',
-    body: JSON.stringify({ name, instance_type, region, cpu_cores, memory_mb, disk_gb })
+    body: JSON.stringify({ name, instance_type, region, image, port, cpu_cores, memory_mb, disk_gb })
   });
   
   if (!ok) return toast(body.error || 'Failed to launch instance', 'error');
@@ -936,8 +958,8 @@ window.action = async function(action, instanceId) {
   if (!ok) return toast(body.error || 'Action failed', 'error');
   
   const verb = actionVerb(action);
-  toast(`Instance ${verb} successfully`, 'success');
-  addActivityLog(`instance.${action}`, `Instance #${instanceId} was ${verb}`);
+  toast(`Instance ${action} requested`, 'success');
+  addActivityLog(`instance.${action}`, `Instance #${instanceId} ${verb} requested`);
   
   // Refresh the current view
   if (state.currentOrg) {

@@ -46,11 +46,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	inst, err := h.svc.Create(r.Context(), orgID, claims.UserID, req)
 	if err != nil {
-		if errors.Is(err, ErrNotInOrg) {
-			httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
-			return
-		}
-		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httpx.ErrInternalServer})
+		httpx.WriteError(w, err, map[error]int{
+			ErrNotInOrg:             http.StatusForbidden,
+			ErrUnknownRegion:        http.StatusBadRequest,
+			ErrQuotaExceeded:        http.StatusConflict,
+			ErrInsufficientCapacity: http.StatusConflict,
+		})
 		return
 	}
 
@@ -115,56 +116,55 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, inst)
 }
 
+// Start, Stop and Terminate accept the transition and return 202 Accepted:
+// the target state is reached asynchronously by the reconciler.
 func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
-	claims := auth.GetClaims(r.Context())
-	if claims == nil {
-		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	orgID, _ := strconv.ParseInt(chi.URLParam(r, "orgID"), 10, 64)
-	instanceID, _ := strconv.ParseInt(chi.URLParam(r, "instanceID"), 10, 64)
-
-	if err := h.svc.Start(r.Context(), orgID, instanceID, claims.UserID); err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "started"})
+	h.transition(w, r, "start")
 }
 
 func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
-	claims := auth.GetClaims(r.Context())
-	if claims == nil {
-		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	orgID, _ := strconv.ParseInt(chi.URLParam(r, "orgID"), 10, 64)
-	instanceID, _ := strconv.ParseInt(chi.URLParam(r, "instanceID"), 10, 64)
-
-	if err := h.svc.Stop(r.Context(), orgID, instanceID, claims.UserID); err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+	h.transition(w, r, "stop")
 }
 
 func (h *Handler) Terminate(w http.ResponseWriter, r *http.Request) {
+	h.transition(w, r, "terminate")
+}
+
+func (h *Handler) transition(w http.ResponseWriter, r *http.Request, action string) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
 		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 
-	orgID, _ := strconv.ParseInt(chi.URLParam(r, "orgID"), 10, 64)
-	instanceID, _ := strconv.ParseInt(chi.URLParam(r, "instanceID"), 10, 64)
-
-	if err := h.svc.Terminate(r.Context(), orgID, instanceID, claims.UserID); err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	orgID, err := strconv.ParseInt(chi.URLParam(r, "orgID"), 10, 64)
+	if err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": httpx.ErrInvalidOrgID})
+		return
+	}
+	instanceID, err := strconv.ParseInt(chi.URLParam(r, "instanceID"), 10, 64)
+	if err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid instance id"})
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "terminated"})
+	var actionErr error
+	switch action {
+	case "start":
+		actionErr = h.svc.Start(r.Context(), orgID, instanceID, claims.UserID)
+	case "stop":
+		actionErr = h.svc.Stop(r.Context(), orgID, instanceID, claims.UserID)
+	case "terminate":
+		actionErr = h.svc.Terminate(r.Context(), orgID, instanceID, claims.UserID)
+	}
+	if actionErr != nil {
+		httpx.WriteError(w, actionErr, map[error]int{
+			ErrNotInOrg:          http.StatusForbidden,
+			ErrNotFound:          http.StatusNotFound,
+			ErrInvalidTransition: http.StatusConflict,
+		})
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted", "action": action})
 }
