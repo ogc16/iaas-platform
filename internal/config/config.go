@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -45,6 +47,11 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	// Load .env into the process environment. Real environment variables take
+	// precedence (godotenv never overwrites them), and a missing .env is fine
+	// when variables come from the shell, CI, or an orchestrator.
+	_ = godotenv.Load()
+
 	port, err := strconv.Atoi(getEnv("PORT", "8080"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid PORT: %w", err)
