@@ -26,6 +26,12 @@ func CORS(next http.Handler) http.Handler {
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+
+		requestID := chimw.GetReqID(r.Context())
+		if requestID != "" {
+			w.Header().Set("X-Request-ID", requestID)
+		}
+
 		wrapped := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
 
@@ -36,7 +42,7 @@ func Logger(next http.Handler) http.Handler {
 			"bytes", wrapped.bytes,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"remote_addr", r.RemoteAddr,
-			"request_id", chimw.GetReqID(r.Context()),
+			"request_id", requestID,
 		)
 	})
 }
