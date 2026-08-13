@@ -26,6 +26,14 @@ function api(path, opts) {
     .catch(() => ({ ok: false, body: { error: 'Network error' } }));
 }
 
+// List endpoints should return JSON arrays; tolerate null/object shapes.
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.orgs)) return value.orgs;
+  if (value && Array.isArray(value.data)) return value.data;
+  return [];
+}
+
 // Notification system with history
 function notify(msg, type = 'success', duration = 3000) {
   const notification = {
@@ -337,16 +345,13 @@ async function renderDashboard() {
   try {
     const { ok, body } = await api('/orgs');
     if (!ok) { main.innerHTML = '<div class="loading">Failed to load dashboard</div>'; return; }
-    // API may return either an array or an object containing the array.
-    // Handler currently writes `orgs` directly (array), but this makes the UI resilient.
-    state.orgs = Array.isArray(body) ? body : (body?.orgs || body?.data || []);
-
+    state.orgs = asArray(body);
 
     // Fetch instance lists concurrently to avoid one failing request blocking rendering
     const instanceResults = await Promise.all(
       state.orgs.map(async (org) => {
         const { ok, body: instances } = await api(`/orgs/${org.id}/instances`);
-        return ok ? instances : [];
+        return ok ? asArray(instances) : [];
       })
     );
 
@@ -390,8 +395,9 @@ async function renderOrgs() {
   const main = document.getElementById('main');
   main.innerHTML = '<div class="loading">Loading...</div>';
 
-  const { ok, body: orgs } = await api('/orgs');
+  const { ok, body: orgsBody } = await api('/orgs');
   if (!ok) { main.innerHTML = '<div class="loading">Failed to load</div>'; return; }
+  const orgs = asArray(orgsBody);
   state.orgs = orgs;
 
   if (state.currentOrg) {
@@ -412,10 +418,12 @@ async function renderOrgs() {
 }
 
 async function renderOrgDetail(org) {
-  const { ok: instOk, body: instances } = await api(`/orgs/${org.id}/instances`);
-  if (instOk) state.instances = instances;
+  const { ok: instOk, body: instancesBody } = await api(`/orgs/${org.id}/instances`);
+  const instances = instOk ? asArray(instancesBody) : [];
+  state.instances = instances;
 
-  const { body: members } = await api(`/orgs/${org.id}/members`);
+  const { body: membersBody } = await api(`/orgs/${org.id}/members`);
+  const members = asArray(membersBody);
 
   const running = instances.filter(i => i.status === 'running').length;
   const stopped = instances.filter(i => i.status === 'stopped').length;
@@ -457,6 +465,7 @@ window.switchTab = function(btn) {
 };
 
 function renderInstancesTab(instances) {
+  instances = asArray(instances);
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3>Compute Instances</h3>
@@ -562,8 +571,9 @@ window.confirmAction = function(action, instanceId) {
 async function renderMembersTab() {
   const main = document.getElementById('tab-content');
   main.innerHTML = '<div class="loading">Loading...</div>';
-  const { ok, body: members } = await api(`/orgs/${state.currentOrg}/members`);
+  const { ok, body: membersBody } = await api(`/orgs/${state.currentOrg}/members`);
   if (!ok) { main.innerHTML = '<div class="empty">Failed to load members</div>'; return; }
+  const members = asArray(membersBody);
   main.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3>Team Members</h3>
@@ -578,15 +588,16 @@ async function renderBillingTab() {
   const main = document.getElementById('tab-content');
   main.innerHTML = '<div class="loading">Loading billing data...</div>';
   const { ok: usageOk, body: usage } = await api(`/orgs/${state.currentOrg}/billing/usage`);
-  const { ok: invOk, body: invoices } = await api(`/orgs/${state.currentOrg}/billing/invoices`);
+  const { ok: invOk, body: invoicesBody } = await api(`/orgs/${state.currentOrg}/billing/invoices`);
   
   if (!usageOk || !invOk) {
     main.innerHTML = '<div class="card empty"><p>Failed to load billing data</p></div>';
     return;
   }
 
-  const totalCost = invoices?.reduce((sum, inv) => sum + (inv.amount_cents / 100), 0) || 0;
-  const avgMonthlyCost = totalCost / Math.max(invoices?.length || 1, 1);
+  const invoices = asArray(invoicesBody);
+  const totalCost = invoices.reduce((sum, inv) => sum + (inv.amount_cents / 100), 0) || 0;
+  const avgMonthlyCost = totalCost / Math.max(invoices.length || 1, 1);
   
   main.innerHTML = `
     <div class="billing-container">
