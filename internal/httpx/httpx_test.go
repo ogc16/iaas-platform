@@ -27,3 +27,13 @@ func TestWriteJSON(t *testing.T) {
 		t.Fatalf("unexpected body: %v", body)
 	}
 }
+
+func TestWriteJSON_NilSliceIsEmptyArray(t *testing.T) {
+	rec := httptest.NewRecorder()
+	var items []string
+	WriteJSON(rec, http.StatusOK, items)
+
+	if got := rec.Body.String(); got != "[]\n" {
+		t.Fatalf("expected empty JSON array, got %q", got)
+	}
+}
