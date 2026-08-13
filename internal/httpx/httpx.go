@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 )
 
 const (
@@ -14,6 +15,14 @@ const (
 func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+	// encoding/json marshals a nil slice as null. List endpoints should return
+	// [] so browser clients can safely call Array methods.
+	if data != nil {
+		v := reflect.ValueOf(data)
+		if v.Kind() == reflect.Slice && v.IsNil() {
+			data = reflect.MakeSlice(v.Type(), 0, 0).Interface()
+		}
+	}
 	json.NewEncoder(w).Encode(data)
 }
 
