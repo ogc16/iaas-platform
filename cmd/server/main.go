@@ -49,6 +49,9 @@ func main() {
 	computeRepo := database.NewComputeRepository(pool)
 	usageRepo := database.NewUsageRepository(pool)
 	invoiceRepo := database.NewInvoiceRepository(pool)
+	quotaRepo := database.NewQuotaRepository(pool)
+	capacityRepo := database.NewCapacityRepository(pool)
+	providerStateRepo := database.NewProviderStateRepository(pool)
 
 	jwtSvc := auth.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTExpiresIn)
 	authSvc := auth.NewService(userRepo, jwtSvc)
@@ -57,11 +60,19 @@ func main() {
 	orgSvc := organizations.NewService(orgRepo, userRepo)
 	orgHandler := organizations.NewHandler(orgSvc)
 
-	computeSvc := compute.NewService(computeRepo, orgRepo)
+	provider := compute.NewSimProvider(providerStateRepo, cfg.ProvisioningDelay, cfg.StopDelay)
+	computeSvc := compute.NewService(computeRepo, orgRepo, provider, quotaRepo, capacityRepo)
 	computeHandler := compute.NewHandler(computeSvc)
 
 	billingSvc := billing.NewService(usageRepo, invoiceRepo, orgRepo)
 	billingHandler := billing.NewHandler(billingSvc)
+
+	// Async lifecycle worker: advances pending/stopping/terminating instances
+	// based on the provider's reported state.
+	reconciler := compute.NewReconciler(computeRepo, provider, slog.Default())
+	reconcileCtx, stopReconciler := context.WithCancel(context.Background())
+	defer stopReconciler()
+	go reconciler.Run(reconcileCtx, cfg.ReconcileInterval)
 
 	r := router.New(authHandler, orgHandler, computeHandler, billingHandler, auth.Middleware(authSvc))
 
