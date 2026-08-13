@@ -17,14 +17,20 @@ type RateLimiter struct {
 	rate     int
 	burst    int
 	interval time.Duration
+	now      func() time.Time
 }
 
 func NewRateLimiter(rate, burst int, interval time.Duration) *RateLimiter {
+	return newRateLimiter(rate, burst, interval, time.Now)
+}
+
+func newRateLimiter(rate, burst int, interval time.Duration, now func() time.Time) *RateLimiter {
 	rl := &RateLimiter{
 		visitors: make(map[string]*visitor),
 		rate:     rate,
 		burst:    burst,
 		interval: interval,
+		now:      now,
 	}
 	go rl.cleanup()
 	return rl
@@ -47,17 +53,17 @@ func (rl *RateLimiter) allow(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
+	now := rl.now()
 	v, exists := rl.visitors[key]
-	now := time.Now()
-
 	if !exists {
 		rl.visitors[key] = &visitor{tokens: rl.burst - 1, lastSeen: now}
 		return true
 	}
 
+	// Refill tokens at `rate` tokens per `interval`.
 	elapsed := now.Sub(v.lastSeen)
 	v.lastSeen = now
-	v.tokens += int(elapsed / rl.interval)
+	v.tokens += int(elapsed/rl.interval) * rl.rate
 	if v.tokens > rl.burst {
 		v.tokens = rl.burst
 	}
