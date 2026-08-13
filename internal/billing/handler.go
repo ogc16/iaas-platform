@@ -114,7 +114,8 @@ func (h *Handler) ListInvoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invoices, err := h.svc.GetInvoices(r.Context(), orgID, claims.UserID)
+	limit, offset := httpx.PageParams(r)
+	invoices, total, err := h.svc.GetInvoices(r.Context(), orgID, claims.UserID, limit, offset)
 	if err != nil {
 		if errors.Is(err, ErrNotInOrg) {
 			httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -124,6 +125,7 @@ func (h *Handler) ListInvoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	httpx.SetTotalCount(w, total)
 	httpx.WriteJSON(w, http.StatusOK, invoices)
 }
 

@@ -69,9 +69,10 @@ func (r *InvoiceRepository) AddLineItem(ctx context.Context, item *models.Invoic
 	return r.pool.QueryRow(ctx, query, item.InvoiceID, item.Description, item.ResourceType, item.Quantity, item.UnitPriceCents, item.AmountCents).Scan(&item.ID)
 }
 
-func (r *InvoiceRepository) ListByOrg(ctx context.Context, orgID int64) ([]models.Invoice, error) {
-	query := `SELECT id, organization_id, amount_cents, currency, status, period_start, period_end, created_at FROM invoices WHERE organization_id = $1 ORDER BY created_at DESC`
-	rows, err := r.pool.Query(ctx, query, orgID)
+func (r *InvoiceRepository) ListByOrg(ctx context.Context, orgID int64, limit, offset int) ([]models.Invoice, error) {
+	query := `SELECT id, organization_id, amount_cents, currency, status, period_start, period_end, created_at
+		FROM invoices WHERE organization_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`
+	rows, err := r.pool.Query(ctx, query, orgID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list invoices: %w", err)
 	}
@@ -86,6 +87,15 @@ func (r *InvoiceRepository) ListByOrg(ctx context.Context, orgID int64) ([]model
 		invoices = append(invoices, inv)
 	}
 	return invoices, nil
+}
+
+func (r *InvoiceRepository) CountByOrg(ctx context.Context, orgID int64) (int64, error) {
+	query := `SELECT COUNT(*) FROM invoices WHERE organization_id = $1`
+	var n int64
+	if err := r.pool.QueryRow(ctx, query, orgID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count invoices: %w", err)
+	}
+	return n, nil
 }
 
 func (r *InvoiceRepository) GetLineItems(ctx context.Context, invoiceID int64) ([]models.InvoiceLineItem, error) {

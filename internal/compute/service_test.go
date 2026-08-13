@@ -43,7 +43,7 @@ func (f *fakeInstanceStore) FindByID(ctx context.Context, id int64) (*models.Com
 	return nil, database.ErrNotFound
 }
 
-func (f *fakeInstanceStore) ListByOrg(ctx context.Context, orgID int64) ([]models.ComputeInstance, error) {
+func (f *fakeInstanceStore) ListByOrg(ctx context.Context, orgID int64, limit, offset int) ([]models.ComputeInstance, error) {
 	var out []models.ComputeInstance
 	for _, inst := range f.instances {
 		if inst.OrganizationID == orgID {
@@ -51,6 +51,16 @@ func (f *fakeInstanceStore) ListByOrg(ctx context.Context, orgID int64) ([]model
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeInstanceStore) CountByOrg(ctx context.Context, orgID int64) (int64, error) {
+	var n int64
+	for _, inst := range f.instances {
+		if inst.OrganizationID == orgID {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeInstanceStore) ListActive(ctx context.Context) ([]models.ComputeInstance, error) {
@@ -435,8 +445,22 @@ func TestService_Create_PropagatesRepoError(t *testing.T) {
 func TestService_List_NotInOrg(t *testing.T) {
 	e := newTestEnv()
 
-	if _, err := e.svc.List(context.Background(), 1, 2); !errors.Is(err, ErrNotInOrg) {
+	if _, _, err := e.svc.List(context.Background(), 1, 2, 50, 0); !errors.Is(err, ErrNotInOrg) {
 		t.Fatalf("expected ErrNotInOrg, got %v", err)
+	}
+}
+
+func TestService_List_ReturnsTotal(t *testing.T) {
+	e := newTestEnv()
+	e.addMember(1, 2)
+	e.instances.instances[1] = &models.ComputeInstance{ID: 1, OrganizationID: 1}
+
+	instances, total, err := e.svc.List(context.Background(), 1, 2, 50, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(instances) != 1 || total != 1 {
+		t.Fatalf("expected 1 instance and total 1, got %d instances, total %d", len(instances), total)
 	}
 }
 

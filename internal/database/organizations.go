@@ -59,9 +59,10 @@ func (r *OrgRepository) AddMember(ctx context.Context, member *models.OrgMember)
 	return r.pool.QueryRow(ctx, query, member.OrganizationID, member.UserID, member.Role, member.CreatedAt).Scan(&member.ID)
 }
 
-func (r *OrgRepository) FindMembers(ctx context.Context, orgID int64) ([]models.OrgMember, error) {
-	query := `SELECT id, organization_id, user_id, role, created_at FROM organization_members WHERE organization_id = $1`
-	rows, err := r.pool.Query(ctx, query, orgID)
+func (r *OrgRepository) FindMembers(ctx context.Context, orgID int64, limit, offset int) ([]models.OrgMember, error) {
+	query := `SELECT id, organization_id, user_id, role, created_at FROM organization_members
+		WHERE organization_id = $1 ORDER BY id LIMIT $2 OFFSET $3`
+	rows, err := r.pool.Query(ctx, query, orgID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("find members: %w", err)
 	}
@@ -78,6 +79,15 @@ func (r *OrgRepository) FindMembers(ctx context.Context, orgID int64) ([]models.
 	return members, nil
 }
 
+func (r *OrgRepository) CountMembers(ctx context.Context, orgID int64) (int64, error) {
+	query := `SELECT COUNT(*) FROM organization_members WHERE organization_id = $1`
+	var n int64
+	if err := r.pool.QueryRow(ctx, query, orgID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count members: %w", err)
+	}
+	return n, nil
+}
+
 func (r *OrgRepository) FindMember(ctx context.Context, orgID, userID int64) (*models.OrgMember, error) {
 	query := `SELECT id, organization_id, user_id, role, created_at FROM organization_members WHERE organization_id = $1 AND user_id = $2`
 	m := &models.OrgMember{}
@@ -91,12 +101,12 @@ func (r *OrgRepository) FindMember(ctx context.Context, orgID, userID int64) (*m
 	return m, nil
 }
 
-func (r *OrgRepository) ListByUser(ctx context.Context, userID int64) ([]models.Organization, error) {
+func (r *OrgRepository) ListByUser(ctx context.Context, userID int64, limit, offset int) ([]models.Organization, error) {
 	query := `SELECT o.id, o.name, o.slug, o.created_at, o.updated_at
 		FROM organizations o
 		JOIN organization_members om ON om.organization_id = o.id
-		WHERE om.user_id = $1`
-	rows, err := r.pool.Query(ctx, query, userID)
+		WHERE om.user_id = $1 ORDER BY o.id LIMIT $2 OFFSET $3`
+	rows, err := r.pool.Query(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list orgs by user: %w", err)
 	}
@@ -111,4 +121,16 @@ func (r *OrgRepository) ListByUser(ctx context.Context, userID int64) ([]models.
 		orgs = append(orgs, o)
 	}
 	return orgs, nil
+}
+
+func (r *OrgRepository) CountByUser(ctx context.Context, userID int64) (int64, error) {
+	query := `SELECT COUNT(*)
+		FROM organizations o
+		JOIN organization_members om ON om.organization_id = o.id
+		WHERE om.user_id = $1`
+	var n int64
+	if err := r.pool.QueryRow(ctx, query, userID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count orgs by user: %w", err)
+	}
+	return n, nil
 }

@@ -59,7 +59,7 @@ func (f *fakeInvoiceStore) AddLineItem(ctx context.Context, item *models.Invoice
 	return nil
 }
 
-func (f *fakeInvoiceStore) ListByOrg(ctx context.Context, orgID int64) ([]models.Invoice, error) {
+func (f *fakeInvoiceStore) ListByOrg(ctx context.Context, orgID int64, limit, offset int) ([]models.Invoice, error) {
 	var out []models.Invoice
 	for _, inv := range f.created {
 		if inv.OrganizationID == orgID {
@@ -67,6 +67,16 @@ func (f *fakeInvoiceStore) ListByOrg(ctx context.Context, orgID int64) ([]models
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeInvoiceStore) CountByOrg(ctx context.Context, orgID int64) (int64, error) {
+	var n int64
+	for _, inv := range f.created {
+		if inv.OrganizationID == orgID {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeInvoiceStore) GetLineItems(ctx context.Context, invoiceID int64) ([]models.InvoiceLineItem, error) {
@@ -218,8 +228,24 @@ func TestService_GetInvoices_NotInOrg(t *testing.T) {
 	svc, _, _, members := newTestService()
 	members.ok = false
 
-	if _, err := svc.GetInvoices(context.Background(), 1, 2); !errors.Is(err, ErrNotInOrg) {
+	if _, _, err := svc.GetInvoices(context.Background(), 1, 2, 50, 0); !errors.Is(err, ErrNotInOrg) {
 		t.Fatalf("expected ErrNotInOrg, got %v", err)
+	}
+}
+
+func TestService_GetInvoices_ReturnsTotal(t *testing.T) {
+	svc, _, invoices, _ := newTestService()
+	invoices.created = []*models.Invoice{
+		{ID: 1, OrganizationID: 1, AmountCents: 100},
+		{ID: 2, OrganizationID: 1, AmountCents: 200},
+	}
+
+	got, total, err := svc.GetInvoices(context.Background(), 1, 2, 50, 0)
+	if err != nil {
+		t.Fatalf("GetInvoices: %v", err)
+	}
+	if len(got) != 2 || total != 2 {
+		t.Fatalf("expected 2 invoices with total 2, got %d invoices, total %d", len(got), total)
 	}
 }
 

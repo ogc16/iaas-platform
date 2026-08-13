@@ -24,7 +24,8 @@ var (
 type InstanceStore interface {
 	Create(ctx context.Context, inst *models.ComputeInstance) error
 	FindByID(ctx context.Context, id int64) (*models.ComputeInstance, error)
-	ListByOrg(ctx context.Context, orgID int64) ([]models.ComputeInstance, error)
+	ListByOrg(ctx context.Context, orgID int64, limit, offset int) ([]models.ComputeInstance, error)
+	CountByOrg(ctx context.Context, orgID int64) (int64, error)
 	ListActive(ctx context.Context) ([]models.ComputeInstance, error)
 	SumActiveByOrg(ctx context.Context, orgID int64) (models.OrgUsage, error)
 	SumActiveByRegion(ctx context.Context, region string) (models.RegionUsage, error)
@@ -183,14 +184,25 @@ func (s *Service) Create(ctx context.Context, orgID, userID int64, req models.Cr
 	return inst, nil
 }
 
-func (s *Service) List(ctx context.Context, orgID, userID int64) ([]models.ComputeInstance, error) {
+// List returns one page of instances for an org along with the total count of
+// matching instances (for pagination via the X-Total-Count header).
+func (s *Service) List(ctx context.Context, orgID, userID int64, limit, offset int) ([]models.ComputeInstance, int64, error) {
 	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
 		if errors.Is(err, database.ErrNotFound) {
-			return nil, ErrNotInOrg
+			return nil, 0, ErrNotInOrg
 		}
-		return nil, fmt.Errorf("check membership: %w", err)
+		return nil, 0, fmt.Errorf("check membership: %w", err)
 	}
-	return s.repo.ListByOrg(ctx, orgID)
+
+	instances, err := s.repo.ListByOrg(ctx, orgID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list instances: %w", err)
+	}
+	total, err := s.repo.CountByOrg(ctx, orgID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count instances: %w", err)
+	}
+	return instances, total, nil
 }
 
 func (s *Service) Get(ctx context.Context, orgID, instanceID, userID int64) (*models.ComputeInstance, error) {

@@ -23,7 +23,8 @@ type UsageStore interface {
 type InvoiceStore interface {
 	Create(ctx context.Context, inv *models.Invoice) error
 	AddLineItem(ctx context.Context, item *models.InvoiceLineItem) error
-	ListByOrg(ctx context.Context, orgID int64) ([]models.Invoice, error)
+	ListByOrg(ctx context.Context, orgID int64, limit, offset int) ([]models.Invoice, error)
+	CountByOrg(ctx context.Context, orgID int64) (int64, error)
 	GetLineItems(ctx context.Context, invoiceID int64) ([]models.InvoiceLineItem, error)
 }
 
@@ -83,14 +84,24 @@ func (s *Service) GetUsage(ctx context.Context, orgID, userID int64) (*models.Us
 	return summary, nil
 }
 
-func (s *Service) GetInvoices(ctx context.Context, orgID, userID int64) ([]models.Invoice, error) {
+// GetInvoices returns one page of an org's invoices and the total count.
+func (s *Service) GetInvoices(ctx context.Context, orgID, userID int64, limit, offset int) ([]models.Invoice, int64, error) {
 	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
 		if errors.Is(err, database.ErrNotFound) {
-			return nil, ErrNotInOrg
+			return nil, 0, ErrNotInOrg
 		}
-		return nil, fmt.Errorf("check membership: %w", err)
+		return nil, 0, fmt.Errorf("check membership: %w", err)
 	}
-	return s.invoiceRepo.ListByOrg(ctx, orgID)
+
+	invoices, err := s.invoiceRepo.ListByOrg(ctx, orgID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list invoices: %w", err)
+	}
+	total, err := s.invoiceRepo.CountByOrg(ctx, orgID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count invoices: %w", err)
+	}
+	return invoices, total, nil
 }
 
 func (s *Service) GenerateInvoice(ctx context.Context, orgID int64) (*models.Invoice, error) {

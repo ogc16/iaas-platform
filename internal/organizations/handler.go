@@ -59,12 +59,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgs, err := h.svc.List(r.Context(), claims.UserID)
+	limit, offset := httpx.PageParams(r)
+	orgs, total, err := h.svc.List(r.Context(), claims.UserID, limit, offset)
 	if err != nil {
 		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httpx.ErrInternalServer})
 		return
 	}
 
+	httpx.SetTotalCount(w, total)
 	httpx.WriteJSON(w, http.StatusOK, orgs)
 }
 
@@ -140,11 +142,13 @@ func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.svc.ListMembers(r.Context(), orgID, claims.UserID)
+	limit, offset := httpx.PageParams(r)
+	members, total, err := h.svc.ListMembers(r.Context(), orgID, claims.UserID, limit, offset)
 	if err != nil {
 		httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
 
+	httpx.SetTotalCount(w, total)
 	httpx.WriteJSON(w, http.StatusOK, members)
 }

@@ -83,7 +83,7 @@ func (f *fakeOrgStore) FindMember(ctx context.Context, orgID, userID int64) (*mo
 	return nil, database.ErrNotFound
 }
 
-func (f *fakeOrgStore) FindMembers(ctx context.Context, orgID int64) ([]models.OrgMember, error) {
+func (f *fakeOrgStore) FindMembers(ctx context.Context, orgID int64, limit, offset int) ([]models.OrgMember, error) {
 	var out []models.OrgMember
 	for _, m := range f.members {
 		if m.OrganizationID == orgID {
@@ -93,7 +93,17 @@ func (f *fakeOrgStore) FindMembers(ctx context.Context, orgID int64) ([]models.O
 	return out, nil
 }
 
-func (f *fakeOrgStore) ListByUser(ctx context.Context, userID int64) ([]models.Organization, error) {
+func (f *fakeOrgStore) CountMembers(ctx context.Context, orgID int64) (int64, error) {
+	var n int64
+	for _, m := range f.members {
+		if m.OrganizationID == orgID {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (f *fakeOrgStore) ListByUser(ctx context.Context, userID int64, limit, offset int) ([]models.Organization, error) {
 	var out []models.Organization
 	for _, m := range f.members {
 		if m.UserID == userID {
@@ -103,6 +113,18 @@ func (f *fakeOrgStore) ListByUser(ctx context.Context, userID int64) ([]models.O
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeOrgStore) CountByUser(ctx context.Context, userID int64) (int64, error) {
+	var n int64
+	for _, m := range f.members {
+		if m.UserID == userID {
+			if _, ok := f.orgs[m.OrganizationID]; ok {
+				n++
+			}
+		}
+	}
+	return n, nil
 }
 
 type fakeUserStore struct {
@@ -291,8 +313,7 @@ func TestService_InviteMember_PropagatesTargetLookupError(t *testing.T) {
 func TestService_ListMembers_NotAMember(t *testing.T) {
 	svc, _, _ := newTestService()
 
-	_, err := svc.ListMembers(context.Background(), 1, 2)
-	if !errors.Is(err, ErrNotMember) {
+	if _, _, err := svc.ListMembers(context.Background(), 1, 2, 50, 0); !errors.Is(err, ErrNotMember) {
 		t.Fatalf("expected ErrNotMember, got %v", err)
 	}
 }
@@ -305,12 +326,12 @@ func TestService_ListMembers_Success(t *testing.T) {
 		t.Fatalf("invite: %v", err)
 	}
 
-	members, err := svc.ListMembers(context.Background(), org.ID, 1)
+	members, total, err := svc.ListMembers(context.Background(), org.ID, 1, 50, 0)
 	if err != nil {
 		t.Fatalf("ListMembers: %v", err)
 	}
-	if len(members) != 2 {
-		t.Fatalf("expected 2 members, got %d", len(members))
+	if len(members) != 2 || total != 2 {
+		t.Fatalf("expected 2 members with total 2, got %d members, total %d", len(members), total)
 	}
 }
 
@@ -318,11 +339,11 @@ func TestService_List_ReturnsUserOrgs(t *testing.T) {
 	svc, _, _ := newTestService()
 	org, _ := svc.Create(context.Background(), 1, models.CreateOrgRequest{Name: "Acme"})
 
-	orgs, err := svc.List(context.Background(), 1)
+	orgs, total, err := svc.List(context.Background(), 1, 50, 0)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(orgs) != 1 || orgs[0].ID != org.ID {
-		t.Fatalf("unexpected orgs: %+v", orgs)
+	if len(orgs) != 1 || orgs[0].ID != org.ID || total != 1 {
+		t.Fatalf("unexpected orgs: %+v (total %d)", orgs, total)
 	}
 }

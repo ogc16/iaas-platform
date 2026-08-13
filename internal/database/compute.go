@@ -53,10 +53,19 @@ func (r *ComputeRepository) FindByID(ctx context.Context, id int64) (*models.Com
 	return inst, nil
 }
 
-func (r *ComputeRepository) ListByOrg(ctx context.Context, orgID int64) ([]models.ComputeInstance, error) {
+func (r *ComputeRepository) ListByOrg(ctx context.Context, orgID int64, limit, offset int) ([]models.ComputeInstance, error) {
 	query := `SELECT id, organization_id, user_id, name, instance_type, status, region, provider_id, image, port, cpu_cores, memory_mb, disk_gb, ip_address, created_at, updated_at
-		FROM compute_instances WHERE organization_id = $1 ORDER BY created_at DESC`
-	return r.list(ctx, query, orgID)
+		FROM compute_instances WHERE organization_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`
+	return r.list(ctx, query, orgID, limit, offset)
+}
+
+func (r *ComputeRepository) CountByOrg(ctx context.Context, orgID int64) (int64, error) {
+	query := `SELECT COUNT(*) FROM compute_instances WHERE organization_id = $1`
+	var n int64
+	if err := r.pool.QueryRow(ctx, query, orgID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count instances: %w", err)
+	}
+	return n, nil
 }
 
 func (r *ComputeRepository) ListActive(ctx context.Context) ([]models.ComputeInstance, error) {
@@ -65,8 +74,8 @@ func (r *ComputeRepository) ListActive(ctx context.Context) ([]models.ComputeIns
 	return r.list(ctx, query, models.InstanceStatusTerminated)
 }
 
-func (r *ComputeRepository) list(ctx context.Context, query string, arg interface{}) ([]models.ComputeInstance, error) {
-	rows, err := r.pool.Query(ctx, query, arg)
+func (r *ComputeRepository) list(ctx context.Context, query string, args ...interface{}) ([]models.ComputeInstance, error) {
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list instances: %w", err)
 	}

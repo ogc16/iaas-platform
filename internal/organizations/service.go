@@ -23,8 +23,10 @@ type OrgStore interface {
 	FindBySlug(ctx context.Context, slug string) (*models.Organization, error)
 	AddMember(ctx context.Context, member *models.OrgMember) error
 	FindMember(ctx context.Context, orgID, userID int64) (*models.OrgMember, error)
-	FindMembers(ctx context.Context, orgID int64) ([]models.OrgMember, error)
-	ListByUser(ctx context.Context, userID int64) ([]models.Organization, error)
+	FindMembers(ctx context.Context, orgID int64, limit, offset int) ([]models.OrgMember, error)
+	CountMembers(ctx context.Context, orgID int64) (int64, error)
+	ListByUser(ctx context.Context, userID int64, limit, offset int) ([]models.Organization, error)
+	CountByUser(ctx context.Context, userID int64) (int64, error)
 }
 
 type UserStore interface {
@@ -93,8 +95,17 @@ func (s *Service) GetByID(ctx context.Context, orgID, userID int64) (*models.Org
 	return org, nil
 }
 
-func (s *Service) List(ctx context.Context, userID int64) ([]models.Organization, error) {
-	return s.orgRepo.ListByUser(ctx, userID)
+// List returns one page of the caller's organizations and the total count.
+func (s *Service) List(ctx context.Context, userID int64, limit, offset int) ([]models.Organization, int64, error) {
+	orgs, err := s.orgRepo.ListByUser(ctx, userID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list orgs: %w", err)
+	}
+	total, err := s.orgRepo.CountByUser(ctx, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count orgs: %w", err)
+	}
+	return orgs, total, nil
 }
 
 func (s *Service) InviteMember(ctx context.Context, orgID, userID int64, req models.InviteMemberRequest) (*models.OrgMember, error) {
@@ -141,12 +152,22 @@ func (s *Service) InviteMember(ctx context.Context, orgID, userID int64, req mod
 	return member, nil
 }
 
-func (s *Service) ListMembers(ctx context.Context, orgID, userID int64) ([]models.OrgMember, error) {
+// ListMembers returns one page of an org's members and the total count.
+func (s *Service) ListMembers(ctx context.Context, orgID, userID int64, limit, offset int) ([]models.OrgMember, int64, error) {
 	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
 		if errors.Is(err, database.ErrNotFound) {
-			return nil, ErrNotMember
+			return nil, 0, ErrNotMember
 		}
-		return nil, fmt.Errorf("find member: %w", err)
+		return nil, 0, fmt.Errorf("find member: %w", err)
 	}
-	return s.orgRepo.FindMembers(ctx, orgID)
+
+	members, err := s.orgRepo.FindMembers(ctx, orgID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list members: %w", err)
+	}
+	total, err := s.orgRepo.CountMembers(ctx, orgID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count members: %w", err)
+	}
+	return members, total, nil
 }
