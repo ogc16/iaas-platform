@@ -70,10 +70,25 @@ func (f *fakeUserStore) FindByAPIKeyHash(ctx context.Context, apiKeyHash string)
 	return nil, database.ErrNotFound
 }
 
+type fakeOrgCreator struct {
+	created []models.CreateOrgRequest
+	userIDs []int64
+	err     error
+}
+
+func (f *fakeOrgCreator) Create(ctx context.Context, userID int64, req models.CreateOrgRequest) (*models.Organization, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.created = append(f.created, req)
+	f.userIDs = append(f.userIDs, userID)
+	return &models.Organization{ID: int64(len(f.created)), Name: req.Name, Slug: req.Slug}, nil
+}
+
 func newTestService() (*Service, *fakeUserStore, *JWTService) {
 	store := newFakeUserStore()
 	jwt := NewJWTService("test-secret", "test-issuer", 3600)
-	return NewService(store, jwt), store, jwt
+	return NewService(store, jwt, WithOrganizationCreator(&fakeOrgCreator{})), store, jwt
 }
 
 func seedUser(t *testing.T, store *fakeUserStore, email, password string) *models.User {
@@ -98,7 +113,10 @@ func seedUser(t *testing.T, store *fakeUserStore, email, password string) *model
 }
 
 func TestService_Signup_Success(t *testing.T) {
-	svc, store, _ := newTestService()
+	store := newFakeUserStore()
+	jwt := NewJWTService("test-secret", "test-issuer", 3600)
+	orgs := &fakeOrgCreator{}
+	svc := NewService(store, jwt, WithOrganizationCreator(orgs))
 
 	resp, err := svc.Signup(context.Background(), models.SignupRequest{
 		Email:        "alice@example.com",
@@ -131,6 +149,64 @@ func TestService_Signup_Success(t *testing.T) {
 	}
 	if _, ok := store.usersByEmail["alice@example.com"]; !ok {
 		t.Fatal("expected user to be persisted")
+	}
+	if len(orgs.created) != 1 {
+		t.Fatalf("expected one organization to be created, got %d", len(orgs.created))
+	}
+	if orgs.created[0].Name != "acme" {
+		t.Fatalf("unexpected org name: %q", orgs.created[0].Name)
+	}
+	if orgs.userIDs[0] != resp.User.ID {
+		t.Fatalf("org membership must belong to signup user, got userID %d", orgs.userIDs[0])
+	}
+	wantSlug := signupOrgSlug("acme", resp.User.ID)
+	if orgs.created[0].Slug != wantSlug {
+		t.Fatalf("unexpected org slug: got %q want %q", orgs.created[0].Slug, wantSlug)
+	}
+}
+
+func TestService_Signup_SkipsOrgWhenEmpty(t *testing.T) {
+	store := newFakeUserStore()
+	jwt := NewJWTService("test-secret", "test-issuer", 3600)
+	orgs := &fakeOrgCreator{}
+	svc := NewService(store, jwt, WithOrganizationCreator(orgs))
+
+	if _, err := svc.Signup(context.Background(), models.SignupRequest{
+		Email:    "alice@example.com",
+		Password: "hunter2",
+		Name:     "Alice",
+	}); err != nil {
+		t.Fatalf("Signup: %v", err)
+	}
+	if len(orgs.created) != 0 {
+		t.Fatalf("expected no organization when signup omits one, got %d", len(orgs.created))
+	}
+}
+
+func TestService_Signup_RequiresOrgCreator(t *testing.T) {
+	store := newFakeUserStore()
+	jwt := NewJWTService("test-secret", "test-issuer", 3600)
+	svc := NewService(store, jwt) // no OrganizationCreator
+
+	_, err := svc.Signup(context.Background(), models.SignupRequest{
+		Email:        "alice@example.com",
+		Password:     "hunter2",
+		Name:         "Alice",
+		Organization: "acme",
+	})
+	if err == nil {
+		t.Fatal("expected signup with org name to fail without OrganizationCreator")
+	}
+}
+
+func TestSignupOrgSlug(t *testing.T) {
+	got := signupOrgSlug("Acme Corp!", 42)
+	if got != "acme-corp-42" {
+		t.Fatalf("got %q", got)
+	}
+	got = signupOrgSlug("!!!", 7)
+	if got != "org-7" {
+		t.Fatalf("got %q", got)
 	}
 }
 

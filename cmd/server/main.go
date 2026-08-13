@@ -64,10 +64,12 @@ func main() {
 	providerStateRepo := database.NewProviderStateRepository(pool)
 
 	jwtSvc := auth.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTExpiresIn)
-	authSvc := auth.NewService(userRepo, jwtSvc, auth.WithBcryptCost(cfg.BCryptCost))
-	authHandler := auth.NewHandler(authSvc)
-
 	orgSvc := organizations.NewService(orgRepo, userRepo)
+	authSvc := auth.NewService(userRepo, jwtSvc,
+		auth.WithBcryptCost(cfg.BCryptCost),
+		auth.WithOrganizationCreator(orgSvc),
+	)
+	authHandler := auth.NewHandler(authSvc)
 	orgHandler := organizations.NewHandler(orgSvc)
 
 	provider := compute.NewSimProvider(providerStateRepo, cfg.ProvisioningDelay, cfg.StopDelay)

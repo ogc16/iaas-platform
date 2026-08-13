@@ -28,9 +28,16 @@ type UserStore interface {
 	FindByAPIKeyHash(ctx context.Context, apiKeyHash string) (*models.User, error)
 }
 
+// OrganizationCreator creates an organization and membership for a user.
+// Used at signup so the org name collected there appears in the dashboard.
+type OrganizationCreator interface {
+	Create(ctx context.Context, userID int64, req models.CreateOrgRequest) (*models.Organization, error)
+}
+
 type Service struct {
 	repo       UserStore
 	jwt        *JWTService
+	orgs       OrganizationCreator
 	bcryptCost int
 }
 
@@ -42,6 +49,12 @@ type ServiceOption func(*Service)
 // via BCRYPT_COST.
 func WithBcryptCost(cost int) ServiceOption {
 	return func(s *Service) { s.bcryptCost = cost }
+}
+
+// WithOrganizationCreator wires the org bootstrap used when signup includes
+// an organization name.
+func WithOrganizationCreator(c OrganizationCreator) ServiceOption {
+	return func(s *Service) { s.orgs = c }
 }
 
 func NewService(repo UserStore, jwt *JWTService, opts ...ServiceOption) *Service {
@@ -84,6 +97,19 @@ func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
+	// Persist a real organization + admin membership when the signup form
+	// collected an org name. users.organization alone is display metadata;
+	// the dashboard lists orgs via organization_members.
+	if name := strings.TrimSpace(req.Organization); name != "" {
+		if s.orgs == nil {
+			return nil, fmt.Errorf("organization creator not configured")
+		}
+		slug := signupOrgSlug(name, user.ID)
+		if _, err := s.orgs.Create(ctx, user.ID, models.CreateOrgRequest{Name: name, Slug: slug}); err != nil {
+			return nil, fmt.Errorf("create organization: %w", err)
+		}
+	}
+
 	token, err := s.jwt.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		return nil, fmt.Errorf("generate token: %w", err)
@@ -92,6 +118,34 @@ func (s *Service) Signup(ctx context.Context, req models.SignupRequest) (*models
 	// The raw key is returned exactly once, here at signup. Only its digest
 	// exists anywhere else.
 	return &models.AuthResponse{Token: token, APIKey: apiKey, User: *user}, nil
+}
+
+// signupOrgSlug builds a unique slug from the org name and user id so two
+// signups with the same company name do not collide.
+func signupOrgSlug(name string, userID int64) string {
+	slug := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), " ", "-"))
+	slug = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			return r
+		default:
+			return -1
+		}
+	}, slug)
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		slug = "org"
+	}
+	suffix := fmt.Sprintf("-%d", userID)
+	const maxSlug = 32
+	if len(slug)+len(suffix) > maxSlug {
+		slug = slug[:maxSlug-len(suffix)]
+		slug = strings.TrimRight(slug, "-")
+	}
+	return slug + suffix
 }
 
 func (s *Service) Login(ctx context.Context, req models.LoginRequest) (*models.AuthResponse, error) {
