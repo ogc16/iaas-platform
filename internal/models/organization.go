@@ -19,11 +19,11 @@ type OrgMember struct {
 }
 
 type CreateOrgRequest struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	Name string `json:"name" validate:"required,min=3,max=64"`
+	Slug string `json:"slug" validate:"required,min=3,max=32"`
 }
 
 type InviteMemberRequest struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Email string `json:"email" validate:"required,email"`
+	Role  string `json:"role" validate:"omitempty,oneof=admin member"`
 }

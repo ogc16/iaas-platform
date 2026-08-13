@@ -15,15 +15,15 @@ type User struct {
 }
 
 type SignupRequest struct {
-	Email        string `json:"email"`
-	Password     string `json:"password"`
-	Name         string `json:"name"`
-	Organization string `json:"organization"`
+	Email        string `json:"email" validate:"required,email"`
+	Password     string `json:"password" validate:"required,min=8"`
+	Name         string `json:"name" validate:"required,min=2,max=64"`
+	Organization string `json:"organization" validate:"omitempty,max=64"`
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
 }
 
 type AuthResponse struct {

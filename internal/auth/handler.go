@@ -7,6 +7,7 @@ import (
 
 	"github.com/ogc16/iaas-platform/internal/httpx"
 	"github.com/ogc16/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/validate"
 )
 
 type Handler struct {
@@ -24,8 +25,8 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" || req.Name == "" {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "email, password, and name are required"})
+	if err := validate.Struct(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -49,8 +50,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "email and password are required"})
+	if err := validate.Struct(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 

@@ -10,6 +10,7 @@ import (
 	"github.com/ogc16/iaas-platform/internal/auth"
 	"github.com/ogc16/iaas-platform/internal/httpx"
 	"github.com/ogc16/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/validate"
 )
 
 type Handler struct {
@@ -36,6 +37,11 @@ func (h *Handler) RecordUsage(w http.ResponseWriter, r *http.Request) {
 	var req models.RecordUsageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if err := validate.Struct(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 

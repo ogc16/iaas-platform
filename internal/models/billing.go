@@ -12,9 +12,9 @@ type UsageRecord struct {
 }
 
 type RecordUsageRequest struct {
-	InstanceID   int64   `json:"instance_id"`
-	ResourceType string  `json:"resource_type"`
-	Quantity     float64 `json:"quantity"`
+	InstanceID   int64   `json:"instance_id" validate:"required,gte=1"`
+	ResourceType string  `json:"resource_type" validate:"required,oneof=cpu_hours memory_gb_hours disk_gb_hours"`
+	Quantity     float64 `json:"quantity" validate:"required,gt=0"`
 }
 
 const (

@@ -49,12 +49,12 @@ var ActiveStates = []string{
 }
 
 type CreateInstanceRequest struct {
-	Name         string `json:"name"`
-	InstanceType string `json:"instance_type"`
-	Region       string `json:"region"`
-	Image        string `json:"image"`
-	Port         int    `json:"port"`
-	CPUCores     int    `json:"cpu_cores"`
-	MemoryMB     int    `json:"memory_mb"`
-	DiskGB       int    `json:"disk_gb"`
+	Name         string `json:"name" validate:"required,min=1,max=64"`
+	InstanceType string `json:"instance_type" validate:"required,oneof=vm container"`
+	Region       string `json:"region" validate:"required,oneof=us-east-1 us-west-1 eu-west-1"`
+	Image        string `json:"image" validate:"omitempty,max=64"`
+	Port         int    `json:"port" validate:"gte=0,lte=65535"`
+	CPUCores     int    `json:"cpu_cores" validate:"gte=1"`
+	MemoryMB     int    `json:"memory_mb" validate:"gte=1"`
+	DiskGB       int    `json:"disk_gb" validate:"required,gte=1"`
 }
