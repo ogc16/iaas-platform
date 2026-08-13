@@ -43,6 +43,15 @@ func main() {
 		pool.Close()
 	}()
 
+	// Apply pending embedded migrations at startup. Each migration runs in its
+	// own transaction and applied versions are tracked in schema_migrations.
+	migrateCtx, migrateCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer migrateCancel()
+	if _, err := database.Migrate(migrateCtx, pool); err != nil {
+		slog.Error("failed to apply database migrations", "error", err)
+		os.Exit(1)
+	}
+
 	// Dependency Injection Engine
 	userRepo := database.NewUserRepository(pool)
 	orgRepo := database.NewOrgRepository(pool)
