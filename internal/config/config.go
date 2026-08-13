@@ -27,11 +27,23 @@ func Load() (*Config, error) {
 
 	return &Config{
 		Port:         port,
-		DatabaseURL:  getEnv("DATABASE_URL", "postgres://iaas:iaas@localhost:5432/iaas?sslmode=disable"),
+		DatabaseURL:  databaseURL(),
 		JWTSecret:    getEnv("JWT_SECRET", "change-me-in-production"),
 		JWTIssuer:    getEnv("JWT_ISSUER", "iaas-platform"),
 		JWTExpiresIn: jwtExpiresIn,
 	}, nil
+}
+
+func databaseURL() string {
+	if url := os.Getenv("DATABASE_URL"); url != "" {
+		return url
+	}
+	user := getEnv("POSTGRES_USER", "iaas")
+	password := os.Getenv("POSTGRES_PASSWORD")
+	host := getEnv("POSTGRES_HOST", "localhost")
+	port := getEnv("POSTGRES_PORT", "5432")
+	db := getEnv("POSTGRES_DB", "iaas")
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, db)
 }
 
 func getEnv(key, fallback string) string {

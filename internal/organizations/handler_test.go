@@ -1,13 +1,11 @@
 package organizations
 
 import (
-
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/user/iaas-platform/internal/models"
 )
 
 type stubOrgRepo struct{}
@@ -65,4 +63,3 @@ func authContextMiddleware(t *testing.T) func(http.Handler) http.Handler {
 		})
 	}
 }
-

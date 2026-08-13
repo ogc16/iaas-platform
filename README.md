@@ -19,9 +19,10 @@ docker compose up -d
 
 ### Run the server
 ```
+set POSTGRES_PASSWORD=iaas
 go run ./cmd/server
-
 ```
+> The server reads the database connection from `DATABASE_URL`, or builds it from `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_DB` (see `.env.example`). Never hardcode credentials in source.
 ### open psql in cmd
 ```
 docker compose exec -it postgres psql -U iaas -d iaas

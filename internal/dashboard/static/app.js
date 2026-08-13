@@ -17,7 +17,8 @@ let state = {
   },
 };
 
-function api(path, opts = {}) {
+function api(path, opts) {
+  opts = opts || {};
   const headers = { 'Content-Type': 'application/json' };
   if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
   return fetch(`${API}${path}`, { ...opts, headers })
@@ -88,6 +89,87 @@ function escape(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function statusClass(status) {
+  if (status === 'running') return 'green';
+  if (status === 'stopped') return 'yellow';
+  return 'red';
+}
+
+function invoiceStatusClass(status) {
+  if (status === 'paid') return 'green';
+  if (status === 'overdue') return 'red';
+  return 'yellow';
+}
+
+function actionVerb(action) {
+  if (action === 'terminate') return 'terminated';
+  if (action === 'stop') return 'stopped';
+  return 'started';
+}
+
+function orgRow(org, buttonClass, buttonText) {
+  return `<tr>
+    <td><strong>${escape(org.name)}</strong></td>
+    <td style="color:var(--muted)">${escape(org.slug)}</td>
+    <td style="color:var(--muted)">${new Date(org.created_at).toLocaleDateString()}</td>
+    <td><button class="btn ${buttonClass} btn-sm" onclick="selectOrg(${org.id})">${buttonText}</button></td>
+  </tr>`;
+}
+
+function memberRow(m) {
+  return `<tr><td>#${m.user_id}</td><td><span class="badge ${m.role === 'admin' ? 'purple' : 'gray'}">${m.role}</span></td><td style="color:var(--muted)">${new Date(m.created_at).toLocaleDateString()}</td></tr>`;
+}
+
+function instanceActionButtons(i) {
+  const buttons = [];
+  if (i.status === 'running') buttons.push(`<button class="btn btn-outline btn-sm" onclick="action('stop',${i.id})" title="Stop instance">⏸</button>`);
+  if (i.status === 'stopped') buttons.push(`<button class="btn btn-outline btn-sm" onclick="action('start',${i.id})" title="Start instance">▶</button>`);
+  if (i.status !== 'terminated') buttons.push(`<button class="btn btn-danger btn-sm" onclick="confirmAction('terminate',${i.id})" title="Terminate instance">🗑</button>`);
+  return buttons.join(' ');
+}
+
+function instanceRow(i) {
+  return `<tr style="cursor:pointer" onclick="showInstanceDetail(${i.id})">
+    <td><strong>${escape(i.name)}</strong></td>
+    <td><span class="badge ${i.instance_type === 'vm' ? 'purple' : 'gray'}">${i.instance_type}</span></td>
+    <td><span class="badge ${statusClass(i.status)}">${i.status}</span></td>
+    <td style="color:var(--muted);font-size:13px">${i.cpu_cores}vCPU · ${i.memory_mb}MB · ${i.disk_gb}GB</td>
+    <td style="font-family:monospace;font-size:13px;color:${i.ip_address ? 'var(--text)' : 'var(--muted)'}">${i.ip_address || '-'}</td>
+    <td style="color:var(--muted)">${i.region}</td>
+    <td style="display:flex;gap:4px" onclick="event.stopPropagation()">${instanceActionButtons(i)}</td>
+  </tr>`;
+}
+
+function invoiceRow(inv) {
+  return `<tr>
+    <td style="color:var(--muted);font-size:13px">${new Date(inv.period_start).toLocaleDateString()} - ${new Date(inv.period_end).toLocaleDateString()}</td>
+    <td><strong>$${(inv.amount_cents/100).toFixed(2)}</strong></td>
+    <td><span class="badge ${invoiceStatusClass(inv.status)}">${inv.status}</span></td>
+    <td style="color:var(--muted);font-size:13px">${new Date(inv.created_at).toLocaleDateString()}</td>
+    <td><button class="btn btn-outline btn-sm" onclick="viewInvoice(${inv.id})">View</button></td>
+  </tr>`;
+}
+
+function instanceModalActionButtons(instance) {
+  const buttons = [];
+  if (instance.status === 'running') buttons.push(`<button class="btn btn-outline" onclick="action('stop',${instance.id}); document.querySelector('.modal-overlay').remove()">⏸ Stop</button>`);
+  if (instance.status === 'stopped') buttons.push(`<button class="btn btn-outline" onclick="action('start',${instance.id}); document.querySelector('.modal-overlay').remove()">▶ Start</button>`);
+  buttons.push(`<button class="btn btn-outline" onclick="copyToClipboard('${instance.ip_address || 'N/A'}')">📋 Copy IP</button>`);
+  if (instance.status !== 'terminated') buttons.push(`<button class="btn btn-danger" onclick="confirmAction('terminate',${instance.id}); document.querySelector('.modal-overlay').remove()">🗑 Terminate</button>`);
+  return buttons.join(' ');
+}
+
+function activityItem(log) {
+  return `<div class="activity-item">
+    <div class="activity-time">${log.timestamp.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+    <div class="activity-content">
+      <div class="activity-action">${log.action}</div>
+      <div class="activity-details">${log.details}</div>
+      <div class="activity-user">${log.user}</div>
+    </div>
+  </div>`;
 }
 
 function render() {
@@ -293,15 +375,11 @@ async function renderDashboard() {
         </div>
         ${state.orgs.length === 0 ? '<div class="empty"><p>No organizations yet</p><button class="btn btn-primary" onclick="showCreateOrg()">Create your first organization</button></div>' :
         `<table><thead><tr><th>Name</th><th>Slug</th><th>Created</th><th></th></tr></thead><tbody>
-          ${state.orgs.map(o => `<tr>
-            <td><strong>${escape(o.name)}</strong></td>
-            <td style="color:var(--muted)">${escape(o.slug)}</td>
-            <td style="color:var(--muted)">${new Date(o.created_at).toLocaleDateString()}</td>
-            <td><button class="btn btn-outline btn-sm" onclick="selectOrg(${o.id})">Manage</button></td>
-          </tr>`).join('')}
+          ${state.orgs.map(o => orgRow(o, 'btn-outline', 'Manage')).join('')}
         </tbody></table>`}
       </div>`;
   } catch (e) {
+    console.error('Failed to load dashboard', e);
     main.innerHTML = '<div class="loading">Failed to load dashboard</div>';
   }
 }
@@ -327,12 +405,7 @@ async function renderOrgs() {
     </div>
     ${orgs.length === 0 ? '<div class="card empty"><p>No organizations yet</p></div>' :
     `<div class="card"><table><thead><tr><th>Name</th><th>Slug</th><th>Created</th><th></th></tr></thead><tbody>
-      ${orgs.map(o => `<tr>
-        <td><strong>${escape(o.name)}</strong></td>
-        <td style="color:var(--muted)">${escape(o.slug)}</td>
-        <td style="color:var(--muted)">${new Date(o.created_at).toLocaleDateString()}</td>
-        <td><button class="btn btn-primary btn-sm" onclick="selectOrg(${o.id})">Open</button></td>
-      </tr>`).join('')}
+      ${orgs.map(o => orgRow(o, 'btn-primary', 'Open')).join('')}
     </tbody></table></div>`}`;
 }
 
@@ -340,9 +413,7 @@ async function renderOrgDetail(org) {
   const { ok: instOk, body: instances } = await api(`/orgs/${org.id}/instances`);
   if (instOk) state.instances = instances;
 
-  const { ok: membOk, body: members } = await api(`/orgs/${org.id}/members`);
-  const { ok: usageOk, body: usage } = await api(`/orgs/${org.id}/billing/usage`);
-  const { ok: invOk, body: invoices } = await api(`/orgs/${org.id}/billing/invoices`);
+  const { body: members } = await api(`/orgs/${org.id}/members`);
 
   const running = instances.filter(i => i.status === 'running').length;
   const stopped = instances.filter(i => i.status === 'stopped').length;
@@ -391,19 +462,7 @@ function renderInstancesTab(instances) {
     </div>
     ${instances.length === 0 ? '<div class="card empty"><p>No instances. Create your first one!</p></div>' :
     `<div class="card"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Specs</th><th>IP</th><th>Region</th><th></th></tr></thead><tbody>
-      ${instances.map(i => `<tr style="cursor:pointer" onclick="showInstanceDetail(${i.id})">
-        <td><strong>${escape(i.name)}</strong></td>
-        <td><span class="badge ${i.instance_type === 'vm' ? 'purple' : 'gray'}">${i.instance_type}</span></td>
-        <td><span class="badge ${i.status === 'running' ? 'green' : i.status === 'stopped' ? 'yellow' : 'red'}">${i.status}</span></td>
-        <td style="color:var(--muted);font-size:13px">${i.cpu_cores}vCPU · ${i.memory_mb}MB · ${i.disk_gb}GB</td>
-        <td style="font-family:monospace;font-size:13px;color:${i.ip_address ? 'var(--text)' : 'var(--muted)'}">${i.ip_address || '-'}</td>
-        <td style="color:var(--muted)">${i.region}</td>
-        <td style="display:flex;gap:4px" onclick="event.stopPropagation()">
-          ${i.status === 'running' ? `<button class="btn btn-outline btn-sm" onclick="action('stop',${i.id})" title="Stop instance">⏸</button>` : ''}
-          ${i.status === 'stopped' ? `<button class="btn btn-outline btn-sm" onclick="action('start',${i.id})" title="Start instance">▶</button>` : ''}
-          ${i.status !== 'terminated' ? `<button class="btn btn-danger btn-sm" onclick="confirmAction('terminate',${i.id})" title="Terminate instance">🗑</button>` : ''}
-        </td>
-      </tr>`).join('')}
+      ${instances.map(i => instanceRow(i)).join('')}
     </tbody></table></div>`}`;
 }
 
@@ -417,7 +476,7 @@ window.showInstanceDetail = function(instanceId) {
         <h2>${escape(instance.name)}</h2>
         <p style="color:var(--muted);font-size:13px">ID: ${instance.id}</p>
       </div>
-      <span class="badge ${instance.status === 'running' ? 'green' : instance.status === 'stopped' ? 'yellow' : 'red'}" style="margin-top:4px">${instance.status}</span>
+      <span class="badge ${statusClass(instance.status)}" style="margin-top:4px">${instance.status}</span>
     </div>
     
     <div style="margin-top:24px">
@@ -461,10 +520,7 @@ window.showInstanceDetail = function(instanceId) {
     <div style="margin-top:24px">
       <h3 style="margin-bottom:12px">Actions</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${instance.status === 'running' ? `<button class="btn btn-outline" onclick="action('stop',${instance.id}); document.querySelector('.modal-overlay').remove()">⏸ Stop</button>` : ''}
-        ${instance.status === 'stopped' ? `<button class="btn btn-outline" onclick="action('start',${instance.id}); document.querySelector('.modal-overlay').remove()">▶ Start</button>` : ''}
-        <button class="btn btn-outline" onclick="copyToClipboard('${instance.ip_address || 'N/A'}')">📋 Copy IP</button>
-        ${instance.status !== 'terminated' ? `<button class="btn btn-danger" onclick="confirmAction('terminate',${instance.id}); document.querySelector('.modal-overlay').remove()">🗑 Terminate</button>` : ''}
+        ${instanceModalActionButtons(instance)}
       </div>
     </div>
 
@@ -504,7 +560,7 @@ async function renderMembersTab() {
       <button class="btn btn-primary btn-sm" onclick="showInviteMember()">+ Invite</button>
     </div>
     <div class="card"><table><thead><tr><th>User ID</th><th>Role</th><th>Joined</th></tr></thead><tbody>
-      ${members.map(m => `<tr><td>#${m.user_id}</td><td><span class="badge ${m.role === 'admin' ? 'purple' : 'gray'}">${m.role}</span></td><td style="color:var(--muted)">${new Date(m.created_at).toLocaleDateString()}</td></tr>`).join('')}
+      ${members.map(m => memberRow(m)).join('')}
     </tbody></table></div>`;
 }
 
@@ -572,13 +628,7 @@ async function renderBillingTab() {
         </div>
         ${!invoices || invoices.length === 0 ? '<div class="empty"><p>No invoices yet</p></div>' :
         `<div class="invoice-table"><table><thead><tr><th>Period</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
-          ${invoices.map(inv => `<tr>
-            <td style="color:var(--muted);font-size:13px">${new Date(inv.period_start).toLocaleDateString()} - ${new Date(inv.period_end).toLocaleDateString()}</td>
-            <td><strong>$${(inv.amount_cents/100).toFixed(2)}</strong></td>
-            <td><span class="badge ${inv.status === 'paid' ? 'green' : inv.status === 'overdue' ? 'red' : 'yellow'}">${inv.status}</span></td>
-            <td style="color:var(--muted);font-size:13px">${new Date(inv.created_at).toLocaleDateString()}</td>
-            <td><button class="btn btn-outline btn-sm" onclick="viewInvoice(${inv.id})">View</button></td>
-          </tr>`).join('')}
+          ${invoices.map(inv => invoiceRow(inv)).join('')}
         </tbody></table></div>`}
       </div>
     </div>`;
@@ -609,7 +659,7 @@ window.downloadInvoice = function(invoiceId) {
 };
 
 window.showCreateOrg = function() {
-  const m = modal(`
+  modal(`
     <h2>🏢 Create Organization</h2>
     <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Create a new organization to manage your infrastructure</p>
     <div class="form-group">
@@ -654,7 +704,7 @@ window.createOrg = async function() {
 };
 
 window.showCreateInstance = function() {
-  const m = modal(`
+  modal(`
     <h2>🚀 Launch Compute Instance</h2>
     <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Create a new compute instance with your desired specifications</p>
     
@@ -816,7 +866,7 @@ window.createInstance = async function() {
 };
 
 window.showInviteMember = function() {
-  const m = modal(`
+  modal(`
     <h2>👥 Invite Team Member</h2>
     <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Add a new member to your organization</p>
     
@@ -885,9 +935,9 @@ window.action = async function(action, instanceId) {
   const { ok, body } = await api(`/orgs/${state.currentOrg}/instances/${instanceId}/${action}`, { method: 'POST' });
   if (!ok) return toast(body.error || 'Action failed', 'error');
   
-  const actionVerb = action === 'terminate' ? 'terminated' : action === 'stop' ? 'stopped' : 'started';
-  toast(`Instance ${actionVerb} successfully`, 'success');
-  addActivityLog(`instance.${action}`, `Instance #${instanceId} was ${actionVerb}`);
+  const verb = actionVerb(action);
+  toast(`Instance ${verb} successfully`, 'success');
+  addActivityLog(`instance.${action}`, `Instance #${instanceId} was ${verb}`);
   
   // Refresh the current view
   if (state.currentOrg) {
@@ -944,16 +994,7 @@ function renderSettings() {
           ${state.activityLog.length === 0 ? 
             '<div class="empty"><p>No activity yet</p></div>' :
             `<div class="activity-log">
-              ${state.activityLog.slice(0, 20).map(log => `
-                <div class="activity-item">
-                  <div class="activity-time">${log.timestamp.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-                  <div class="activity-content">
-                    <div class="activity-action">${log.action}</div>
-                    <div class="activity-details">${log.details}</div>
-                    <div class="activity-user">${log.user}</div>
-                  </div>
-                </div>
-              `).join('')}
+              ${state.activityLog.slice(0, 20).map(log => activityItem(log)).join('')}
             </div>`
           }
         </div>

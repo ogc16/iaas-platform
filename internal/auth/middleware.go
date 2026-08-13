@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/user/iaas-platform/internal/httpx"
 )
 
 type contextKey string
@@ -17,13 +19,13 @@ func Middleware(svc *Service) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString := extractToken(r)
 			if tokenString == "" {
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing authorization header"})
+				httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing authorization header"})
 				return
 			}
 
 			claims, err := svc.Authenticate(r.Context(), tokenString)
 			if err != nil {
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
+				httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
 				return
 			}
 
