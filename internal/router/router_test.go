@@ -54,6 +54,23 @@ func TestRouter_ServesStaticAssets(t *testing.T) {
 	}
 }
 
+func TestRouter_ServesDocsAndOpenAPI(t *testing.T) {
+	r := newTestRouter()
+
+	rec := do(t, r, http.MethodGet, "/docs")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect from /docs, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/static/docs.html" {
+		t.Fatalf("expected redirect to /static/docs.html, got %q", loc)
+	}
+
+	rec = do(t, r, http.MethodGet, "/static/openapi.yaml")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for openapi.yaml, got %d", rec.Code)
+	}
+}
+
 func TestRouter_PublicAuthRoutes(t *testing.T) {
 	r := newTestRouter()
 

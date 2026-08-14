@@ -9,6 +9,8 @@ bin/
 # Go
 *.test
 *.out
+coverage
+coverage.out
 iaas-platform
 cmd/server/server
 vendor/

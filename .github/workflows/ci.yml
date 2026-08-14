@@ -19,6 +19,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: OpenAPI spec sync
+        run: cmp openapi.yaml internal/dashboard/static/openapi.yaml
+
       - name: Tidy check
         run: |
           go mod tidy
@@ -38,14 +41,19 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Dependency audit (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: Test (race)
         run: go test -race -count=1 ./...
 
       - name: Coverage
         run: go test -count=1 -coverprofile=coverage.out ./...
 
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -n 1
+      - name: Coverage summary and gate
+        run: |
+          go tool cover -func=coverage.out | tail -n 1
+          go tool cover -func=coverage.out | awk -F'[[:space:]]+' '/^total:/ {gsub("%","",$3); print "Total coverage: "$3"%"; if ($3+0 < 45) { print "Coverage below the 45% gate"; exit 1 }}'
 
       - name: Build
         run: go build ./...

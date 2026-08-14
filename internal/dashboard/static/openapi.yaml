@@ -1,0 +1,1075 @@
+openapi: 3.0.3
+info:
+  title: IaaS Platform API
+  description: |
+    A Go-based cloud control plane and billing platform. Multi-tenant
+    organizations, compute resource lifecycle management, API key
+    authentication, rate limiting, quotas, and usage-based billing.
+    The compute backend is a simulation; the control-plane API is real.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Control-plane API
+  - url: http://localhost:8080
+    description: Health probes (served on the server root)
+tags:
+  - name: auth
+  - name: organizations
+  - name: compute
+  - name: billing
+  - name: health
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: Always returns 200 while the process is up. Never depends on external state.
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      description: Returns 200 when the database is reachable, 503 otherwise.
+      responses:
+        '200':
+          description: Server can serve traffic
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '503':
+          description: Database unreachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unavailable
+                  reason:
+                    type: string
+                    example: database unreachable
+  /auth/signup:
+    post:
+      tags: [auth]
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email already taken
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Log in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid credentials
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Request a password reset email
+      description: Always reports success for valid requests so callers cannot enumerate which emails have accounts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset email sent (or would have been sent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForgotPasswordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Reset a password with a one-time token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForgotPasswordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /me:
+    get:
+      tags: [auth]
+      summary: Get the current user
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: The authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /orgs:
+    post:
+      tags: [organizations]
+      summary: Create an organization
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrgRequest'
+      responses:
+        '201':
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Slug already taken
+    get:
+      tags: [organizations]
+      summary: List organizations for the current user
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Organizations
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Organization'
+  /orgs/{orgID}:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    get:
+      tags: [organizations]
+      summary: Get an organization
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/members:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    post:
+      tags: [organizations]
+      summary: Invite a member
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteMemberRequest'
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags: [organizations]
+      summary: List organization members
+      description: |
+        Admins see every member. Regular members only ever see their own
+        membership, so they cannot enumerate other members or their details.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Members
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrgMember'
+  /orgs/{orgID}/members/{userID}:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    delete:
+      tags: [organizations]
+      summary: Revoke a member's access
+      description: Removes a user from the organization and clears any pending join request. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Access revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/members/{userID}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Suspend a member temporarily
+      description: >-
+        Revokes a member's access for the given number of days (1-365). Rights
+        are restored automatically once the period elapses; an admin can also
+        restore access early via unsuspend. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendMemberRequest'
+      responses:
+        '200':
+          description: Member suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/members/{userID}/unsuspend:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Unsuspend a member
+      description: Immediately restores a suspended member's access. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Member unsuspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/requests:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    get:
+      tags: [organizations]
+      summary: List pending join requests
+      description: Users who signed up with this organization's slug and are waiting for approval. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Join requests
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JoinRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /orgs/{orgID}/requests/{userID}/accept:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Accept a join request
+      description: Adds the user as a member of the organization and removes the pending request. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Member added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: User is already a member
+  /orgs/{orgID}/requests/{userID}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Revoke a join request
+      description: Denies a pending join request. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Request revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/instances:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    post:
+      tags: [compute]
+      summary: Create an instance
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInstanceRequest'
+      responses:
+        '201':
+          description: Instance created (pending)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComputeInstance'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Not a member of this organization
+        '409':
+          description: Quota exceeded or insufficient regional capacity
+    get:
+      tags: [compute]
+      summary: List instances in an organization
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Instances
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComputeInstance'
+  /orgs/{orgID}/instances/{instanceID}:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/InstanceID'
+    get:
+      tags: [compute]
+      summary: Get an instance
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Instance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComputeInstance'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/instances/{instanceID}/start:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/InstanceID'
+    post:
+      tags: [compute]
+      summary: Start an instance (async)
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '202':
+          description: Transition accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransitionAccepted'
+        '409':
+          description: Invalid state transition
+  /orgs/{orgID}/instances/{instanceID}/stop:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/InstanceID'
+    post:
+      tags: [compute]
+      summary: Stop an instance (async)
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '202':
+          description: Transition accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransitionAccepted'
+        '409':
+          description: Invalid state transition
+  /orgs/{orgID}/instances/{instanceID}/terminate:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/InstanceID'
+    post:
+      tags: [compute]
+      summary: Terminate an instance (async)
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '202':
+          description: Transition accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransitionAccepted'
+        '409':
+          description: Invalid state transition
+  /orgs/{orgID}/billing/usage:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    get:
+      tags: [billing]
+      summary: Get usage summary for the last 30 days
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Usage summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageSummary'
+    post:
+      tags: [billing]
+      summary: Record usage
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordUsageRequest'
+      responses:
+        '201':
+          description: Usage recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /orgs/{orgID}/billing/invoices:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    get:
+      tags: [billing]
+      summary: List invoices
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Invoices
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invoice'
+  /orgs/{orgID}/billing/invoices/generate:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    post:
+      tags: [billing]
+      summary: Generate an invoice for the current month
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '201':
+          description: Invoice generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+  /orgs/{orgID}/billing/invoices/{invoiceID}:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/InvoiceID'
+    get:
+      tags: [billing]
+      summary: Get invoice line items
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Invoice line items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InvoiceLineItem'
+components:
+  headers:
+    XTotalCount:
+      description: Total number of items available, not just the current page
+      schema:
+        type: integer
+        format: int64
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return (default 50, max 100)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: Number of items to skip before returning results
+      schema:
+        type: integer
+        minimum: 0
+    OrgID:
+      name: orgID
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    UserID:
+      name: userID
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    InstanceID:
+      name: instanceID
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    InvoiceID:
+      name: invoiceID
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: invalid request
+    SignupRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        name:
+          type: string
+        organization:
+          type: string
+        org_slug:
+          type: string
+          description: Slug of an existing organization to request access to. The organization admin must accept before access is granted.
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        api_key:
+          type: string
+          description: Raw API key. Returned only once, on signup; the server stores a SHA-256 hash.
+        org_join_pending:
+          type: boolean
+          description: True when the account requested access to an organization and is awaiting admin approval.
+        user:
+          $ref: '#/components/schemas/User'
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token:
+          type: string
+          description: Single-use reset token from the password reset email.
+          minLength: 20
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+    ForgotPasswordResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: sent
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        organization:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateOrgRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 64
+        slug:
+          type: string
+          minLength: 3
+          maxLength: 32
+    Organization:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    InviteMemberRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, member]
+    SuspendMemberRequest:
+      type: object
+      required: [days]
+      properties:
+        days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Number of days the member is suspended for; access is restored automatically afterwards.
+    OrgMember:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        organization_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: Display name of the member's user account.
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+        suspended_until:
+          type: string
+          format: date-time
+          description: When present, the member's access is revoked until this time, after which it is restored automatically.
+        created_at:
+          type: string
+          format: date-time
+    JoinRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        organization_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateInstanceRequest:
+      type: object
+      required: [name, instance_type, region, disk_gb]
+      properties:
+        name:
+          type: string
+          maxLength: 64
+        instance_type:
+          type: string
+          enum: [vm, container]
+        region:
+          type: string
+          enum: [us-east-1, us-west-1, eu-west-1]
+        image:
+          type: string
+          example: debian-12
+        port:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        cpu_cores:
+          type: integer
+          minimum: 1
+        memory_mb:
+          type: integer
+          minimum: 1
+        disk_gb:
+          type: integer
+          minimum: 1
+    ComputeInstance:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        organization_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        instance_type:
+          type: string
+          enum: [vm, container]
+        status:
+          type: string
+          enum: [pending, running, stopping, stopped, terminating, terminated, failed]
+        region:
+          type: string
+        provider_id:
+          type: string
+        image:
+          type: string
+        port:
+          type: integer
+        cpu_cores:
+          type: integer
+        memory_mb:
+          type: integer
+        disk_gb:
+          type: integer
+        ip_address:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TransitionAccepted:
+      type: object
+      properties:
+        status:
+          type: string
+          example: accepted
+        action:
+          type: string
+          enum: [start, stop, terminate]
+    RecordUsageRequest:
+      type: object
+      required: [instance_id, resource_type, quantity]
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+          minimum: 1
+        resource_type:
+          type: string
+          enum: [cpu_hours, memory_gb_hours, disk_gb_hours]
+        quantity:
+          type: number
+          exclusiveMinimum: 0
+    UsageSummary:
+      type: object
+      properties:
+        cpu_hours:
+          type: number
+        memory_gb_hours:
+          type: number
+        disk_gb_hours:
+          type: number
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        organization_id:
+          type: integer
+          format: int64
+        amount_cents:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [pending, paid, overdue]
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    InvoiceLineItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        invoice_id:
+          type: integer
+          format: int64
+        description:
+          type: string
+        resource_type:
+          type: string
+          enum: [cpu_hours, memory_gb_hours, disk_gb_hours]
+        quantity:
+          type: number
+        unit_price_cents:
+          type: integer
+          format: int64
+        amount_cents:
+          type: integer
+          format: int64
