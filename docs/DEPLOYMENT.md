@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide covers running the IaaS Platform locally and hardening it for production. For architecture details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+This guide covers running the IaaS Platform locally and hardening it for production. For architecture details, see [ARCHITECTURE.md](ARCHITECTURE.md). For copy-paste deployment walkthroughs (systemd, Railway, Kubernetes, Terraform), see the [Deployment Playbook](DEPLOYMENT_PLAYBOOK.md).
 
 ## Prerequisites
 
