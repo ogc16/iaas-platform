@@ -7,12 +7,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/ogc16/iaas-platform/internal/audit"
 	"github.com/ogc16/iaas-platform/internal/auth"
 	"github.com/ogc16/iaas-platform/internal/billing"
 	"github.com/ogc16/iaas-platform/internal/compute"
 	"github.com/ogc16/iaas-platform/internal/dashboard"
+	"github.com/ogc16/iaas-platform/internal/metrics"
 	"github.com/ogc16/iaas-platform/internal/middleware"
 	"github.com/ogc16/iaas-platform/internal/organizations"
+	"github.com/ogc16/iaas-platform/internal/webhooks"
 )
 
 func New(
@@ -20,6 +23,10 @@ func New(
 	orgHandler *organizations.Handler,
 	computeHandler *compute.Handler,
 	billingHandler *billing.Handler,
+	webhooksHandler *webhooks.Handler,
+	auditHandler *audit.Handler,
+	registry *metrics.Registry,
+	metricsToken string,
 	authMW func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -28,15 +35,18 @@ func New(
 
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
+	r.Use(audit.Middleware)
 	r.Use(middleware.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.CORS)
 	r.Use(rl.Middleware)
+	r.Use(metrics.Middleware(registry))
 
 	r.Handle("/static/*", http.StripPrefix("/static/", dashboard.Handler()))
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/static/docs.html", http.StatusFound)
 	})
+	r.Handle("/metrics", metrics.Handler(registry, metricsToken))
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		html, err := dashboard.IndexHTML()
 		if err != nil {
@@ -82,6 +92,19 @@ func New(
 							r.Post("/terminate", computeHandler.Terminate)
 						})
 					})
+
+					r.Route("/webhooks", func(r chi.Router) {
+						r.Post("/", webhooksHandler.Create)
+						r.Get("/", webhooksHandler.List)
+						r.Route("/{webhookID}", func(r chi.Router) {
+							r.Get("/", webhooksHandler.Get)
+							r.Put("/", webhooksHandler.Update)
+							r.Delete("/", webhooksHandler.Delete)
+							r.Post("/ping", webhooksHandler.Ping)
+						})
+					})
+
+					r.Get("/audit", auditHandler.List)
 
 					r.Route("/billing", func(r chi.Router) {
 						r.Get("/usage", billingHandler.GetUsage)

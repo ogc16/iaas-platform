@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 
+	"github.com/ogc16/iaas-platform/internal/audit"
 	"github.com/ogc16/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/webhooks"
 )
 
 // Reconciler advances instance states to match what the provider reports.
@@ -16,6 +19,8 @@ type Reconciler struct {
 	store    InstanceStore
 	provider Provider
 	logger   *slog.Logger
+	auditer  audit.Recorder
+	emitter  webhooks.Emitter
 }
 
 func NewReconciler(store InstanceStore, provider Provider, logger *slog.Logger) *Reconciler {
@@ -23,6 +28,28 @@ func NewReconciler(store InstanceStore, provider Provider, logger *slog.Logger) 
 		logger = slog.Default()
 	}
 	return &Reconciler{store: store, provider: provider, logger: logger}
+}
+
+// SetObservability wires optional audit recording and webhook emission into
+// the reconciler. System-originated changes carry no user id or request
+// metadata.
+func (r *Reconciler) SetObservability(auditer audit.Recorder, emitter webhooks.Emitter) {
+	r.auditer = auditer
+	r.emitter = emitter
+}
+
+// notify records a status change and emits a webhook event. It is best-effort:
+// observability failures must never break reconciliation.
+func (r *Reconciler) notify(ctx context.Context, inst *models.ComputeInstance, to string) {
+	orgID := inst.OrganizationID
+	audit.Record(ctx, r.auditer, &models.AuditEvent{
+		OrganizationID: &orgID,
+		Action:         audit.ActionInstanceStatus,
+		ResourceType:   "instance",
+		ResourceID:     strconv.FormatInt(inst.ID, 10),
+		Metadata:       map[string]any{"from": inst.Status, "to": to, "name": inst.Name},
+	})
+	webhooks.Emit(ctx, r.emitter, orgID, webhooks.EventInstanceUpdated, inst)
 }
 
 // Tick reconciles all non-terminal instances against the provider. It returns
@@ -46,6 +73,7 @@ func (r *Reconciler) Tick(ctx context.Context) (int, error) {
 					}
 					r.logger.Warn("reconcile: provider state lost, instance failed",
 						"instance_id", inst.ID, "provider_id", inst.ProviderID)
+					r.notify(ctx, &inst, models.InstanceStatusFailed)
 					changed++
 				}
 				continue
@@ -62,6 +90,7 @@ func (r *Reconciler) Tick(ctx context.Context) (int, error) {
 			}
 			r.logger.Info("reconcile: instance state changed",
 				"instance_id", inst.ID, "from", inst.Status, "to", state)
+			r.notify(ctx, &inst, state)
 			changed++
 		}
 	}

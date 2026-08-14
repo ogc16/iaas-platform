@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ogc16/iaas-platform/internal/audit"
 	"github.com/ogc16/iaas-platform/internal/auth"
 	"github.com/ogc16/iaas-platform/internal/billing"
 	"github.com/ogc16/iaas-platform/internal/compute"
@@ -18,9 +19,11 @@ import (
 	"github.com/ogc16/iaas-platform/internal/database"
 	"github.com/ogc16/iaas-platform/internal/health"
 	"github.com/ogc16/iaas-platform/internal/mailer"
+	"github.com/ogc16/iaas-platform/internal/metrics"
 	"github.com/ogc16/iaas-platform/internal/middleware"
 	"github.com/ogc16/iaas-platform/internal/organizations"
 	"github.com/ogc16/iaas-platform/internal/router"
+	"github.com/ogc16/iaas-platform/internal/webhooks"
 )
 
 func main() {
@@ -63,6 +66,15 @@ func main() {
 	quotaRepo := database.NewQuotaRepository(pool)
 	capacityRepo := database.NewCapacityRepository(pool)
 	providerStateRepo := database.NewProviderStateRepository(pool)
+	webhookRepo := database.NewWebhookRepository(pool)
+	auditRepo := database.NewAuditRepository(pool)
+
+	// Prometheus-format metrics registry shared by HTTP middleware and the
+	// webhook dispatcher.
+	registry := metrics.NewRegistry()
+	webhookDelivered := registry.NewCounter("iaas_webhook_deliveries_total", "Webhook deliveries completed", nil).WithLabelValues()
+	webhookFailed := registry.NewCounter("iaas_webhook_failures_total", "Webhook deliveries that exhausted their retry budget", nil).WithLabelValues()
+	webhookRetried := registry.NewCounter("iaas_webhook_retries_total", "Webhook delivery attempts that were retried", nil).WithLabelValues()
 
 	jwtSvc := auth.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTExpiresIn)
 	resetRepo := database.NewPasswordResetRepository(pool)
@@ -94,10 +106,24 @@ func main() {
 	billingSvc := billing.NewService(usageRepo, invoiceRepo, orgRepo)
 	billingHandler := billing.NewHandler(billingSvc)
 
+	webhookSvc := webhooks.NewService(webhookRepo, webhookRepo, orgRepo)
+	webhookHandler := webhooks.NewHandler(webhookSvc)
+	emitter := webhooks.NewEmitter(webhookRepo)
+
+	// Optional observability wiring: the recorder and emitter are nil-safe, so
+	// services keep working even when neither is attached.
+	orgSvc.SetObservability(auditRepo, emitter)
+	computeSvc.SetObservability(auditRepo, emitter)
+	billingSvc.SetObservability(auditRepo, emitter)
+
+	auditSvc := audit.NewService(auditRepo, orgRepo)
+	auditHandler := audit.NewHandler(auditSvc)
+
 	// Async lifecycle worker: advances pending/stopping/terminating instances
 	// based on the provider's reported state. reconcileDone lets shutdown wait
 	// for the worker to actually stop before the DB pool is closed.
 	reconciler := compute.NewReconciler(computeRepo, provider, slog.Default())
+	reconciler.SetObservability(auditRepo, emitter)
 	reconcileCtx, stopReconciler := context.WithCancel(context.Background())
 	reconcileDone := make(chan struct{})
 	go func() {
@@ -105,7 +131,20 @@ func main() {
 		reconciler.Run(reconcileCtx, cfg.ReconcileInterval)
 	}()
 
-	r := router.New(authHandler, orgHandler, computeHandler, billingHandler, auth.Middleware(authSvc))
+	// Webhook dispatcher worker: delivers due webhook payloads on its own
+	// interval. DispatcherCtx lets shutdown stop it before the DB pool closes.
+	dispatcher := webhooks.NewDispatcher(webhookRepo, slog.Default(),
+		webhooks.WithDispatchInterval(cfg.WebhookPollInterval),
+		webhooks.WithMetrics(webhookDelivered, webhookFailed, webhookRetried),
+	)
+	dispatcherCtx, stopDispatcher := context.WithCancel(context.Background())
+	dispatcherDone := make(chan struct{})
+	go func() {
+		defer close(dispatcherDone)
+		dispatcher.Run(dispatcherCtx)
+	}()
+
+	r := router.New(authHandler, orgHandler, computeHandler, billingHandler, webhookHandler, auditHandler, registry, cfg.MetricsToken, auth.Middleware(authSvc))
 
 	// Health probes for orchestrators and load balancers. /healthz is pure
 	// liveness; /readyz verifies the database is reachable.
@@ -144,7 +183,7 @@ func main() {
 
 	// Graceful Shutdown — explicit ordering:
 	//   1. stop accepting new requests and drain active ones
-	//   2. cancel the reconciler and wait for it to exit
+	//   2. cancel the reconciler and webhook dispatcher, wait for both to exit
 	//   3. close the database pool
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -160,6 +199,10 @@ func main() {
 	stopReconciler()
 	<-reconcileDone
 	slog.Info("reconciler stopped")
+
+	stopDispatcher()
+	<-dispatcherDone
+	slog.Info("webhook dispatcher stopped")
 
 	slog.Info("closing database connection pool...")
 	pool.Close()

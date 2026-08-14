@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/ogc16/iaas-platform/internal/audit"
 	"github.com/ogc16/iaas-platform/internal/database"
 	"github.com/ogc16/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/webhooks"
 )
 
 var (
@@ -42,10 +45,29 @@ type Service struct {
 	usageRepo   UsageStore
 	invoiceRepo InvoiceStore
 	orgRepo     MembershipStore
+	auditer     audit.Recorder
+	emitter     webhooks.Emitter
 }
 
 func NewService(usageRepo UsageStore, invoiceRepo InvoiceStore, orgRepo MembershipStore) *Service {
 	return &Service{usageRepo: usageRepo, invoiceRepo: invoiceRepo, orgRepo: orgRepo}
+}
+
+// SetObservability wires optional audit recording and webhook emission into
+// the service. Passing nil for either channel disables it.
+func (s *Service) SetObservability(auditer audit.Recorder, emitter webhooks.Emitter) {
+	s.auditer = auditer
+	s.emitter = emitter
+}
+
+func (s *Service) record(ctx context.Context, orgID int64, action, resourceType, resourceID string, metadata map[string]any) {
+	audit.Record(ctx, s.auditer, &models.AuditEvent{
+		OrganizationID: &orgID,
+		Action:         action,
+		ResourceType:   resourceType,
+		ResourceID:     resourceID,
+		Metadata:       metadata,
+	})
 }
 
 func (s *Service) RecordUsage(ctx context.Context, orgID, instanceID int64, resourceType string, quantity float64) error {
@@ -65,6 +87,10 @@ func (s *Service) RecordUsage(ctx context.Context, orgID, instanceID int64, reso
 	if err := s.usageRepo.Record(ctx, record); err != nil {
 		return fmt.Errorf("record usage: %w", err)
 	}
+	s.record(ctx, orgID, audit.ActionUsageRecord, "instance", strconv.FormatInt(instanceID, 10), map[string]any{
+		"resource_type": resourceType, "quantity": quantity,
+	})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventBillingUsageRecorded, record)
 	return nil
 }
 
@@ -162,6 +188,10 @@ func (s *Service) GenerateInvoice(ctx context.Context, orgID int64) (*models.Inv
 		}
 	}
 
+	s.record(ctx, orgID, audit.ActionInvoiceGenerate, "invoice", strconv.FormatInt(inv.ID, 10), map[string]any{
+		"amount_cents": inv.AmountCents, "currency": inv.Currency, "status": inv.Status,
+	})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventBillingInvoiceGenerated, inv)
 	return inv, nil
 }
 

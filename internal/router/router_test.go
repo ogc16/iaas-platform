@@ -6,10 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ogc16/iaas-platform/internal/audit"
 	"github.com/ogc16/iaas-platform/internal/auth"
 	"github.com/ogc16/iaas-platform/internal/billing"
 	"github.com/ogc16/iaas-platform/internal/compute"
+	"github.com/ogc16/iaas-platform/internal/metrics"
 	"github.com/ogc16/iaas-platform/internal/organizations"
+	"github.com/ogc16/iaas-platform/internal/webhooks"
 )
 
 func newTestRouter() http.Handler {
@@ -21,6 +24,10 @@ func newTestRouter() http.Handler {
 		organizations.NewHandler(nil),
 		compute.NewHandler(nil),
 		billing.NewHandler(nil),
+		webhooks.NewHandler(webhooks.NewService(nil, nil, nil)),
+		audit.NewHandler(audit.NewService(nil, nil)),
+		metrics.NewRegistry(),
+		"",
 		authMW,
 	)
 }
@@ -97,6 +104,22 @@ func TestRouter_ProtectedRoutesRequireAuth(t *testing.T) {
 		"/api/v1/orgs/1/billing/usage",
 		"/api/v1/orgs/1/billing/invoices",
 		"/api/v1/orgs/1/billing/invoices/1",
+	} {
+		rec := do(t, r, http.MethodGet, path)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("GET %s: expected 401 without token, got %d", path, rec.Code)
+		}
+	}
+}
+
+func TestRouter_EnterpriseRoutesRequireAuth(t *testing.T) {
+	r := newTestRouter()
+
+	for _, path := range []string{
+		"/api/v1/orgs/1/webhooks",
+		"/api/v1/orgs/1/webhooks/2",
+		"/api/v1/orgs/1/webhooks/2/ping",
+		"/api/v1/orgs/1/audit",
 	} {
 		rec := do(t, r, http.MethodGet, path)
 		if rec.Code != http.StatusUnauthorized {
