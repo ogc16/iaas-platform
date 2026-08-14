@@ -228,6 +228,10 @@ secret scan, and CodeQL on every push and pull request.
 - [Roadmap](ROADMAP.md) — v1.0 gate, v2 features, and non-goals
 - [Changelog](CHANGELOG.md) — release history
 
+## Blog Post
+
+- [Learn how to build a cloud control panel with authentication, billing, and resource management](https://dev.to/ogc16/learn-how-to-build-a-cloud-control-panel-with-authentication-billing-and-resource-management--530e) — walkthrough on DEV of building this platform.
+
 ## License
 
 Licensed under the [MIT License](LICENSE).
