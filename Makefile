@@ -7,7 +7,7 @@ MIGRATE  := migrate
 PORT     ?= 8080
 IMAGE    ?= iaas-platform:dev
 
-.PHONY: all fmt vet audit test race build migrate tidy spec docker-build docker-run clean
+.PHONY: all fmt vet lint audit test race build migrate tidy spec docker-build docker-run clean
 
 all: fmt vet audit test build
 
@@ -18,6 +18,10 @@ fmt:
 vet:
 	@echo "==> go vet"
 	$(GO) vet ./...
+
+lint:
+	@echo "==> golangci-lint"
+	$(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run
 
 audit:
 	@echo "==> govulncheck"

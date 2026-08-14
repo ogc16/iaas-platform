@@ -1,0 +1,55 @@
+# golangci-lint configuration for IaaS Platform.
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck     # unchecked errors
+    - govet        # go vet checks
+    - staticcheck  # comprehensive static analysis
+    - ineffassign  # ineffectual assignments
+    - unused       # unused code
+    - gosimple     # simplification opportunities
+    - goconst      # repeated strings that could be constants
+    - misspell     # common spelling mistakes
+
+linters-settings:
+  errcheck:
+    check-blank: false
+    exclude-functions:
+      # Response Write errors are routinely ignored in HTTP handlers.
+      - (io.Writer).Write
+      - (*bufio.Writer).Write
+      - (*bytes.Buffer).Write
+      - (*net/http.ResponseWriter).Write
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment  # not worth the struct reordering churn
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+issues:
+  # Don't silence the whole repo — fix issues, don't hide them.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Test files may use longer lines and looser naming.
+    - path: _test\.go
+      linters:
+        - goconst
+        - errcheck
+
+    # Generated code (migrations, embedded assets) should not be linted.
+    - path: internal/database/migrations/
+      linters:
+        - errcheck
+        - govet
+        - staticcheck
+        - unused

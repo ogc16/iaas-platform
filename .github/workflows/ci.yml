@@ -41,6 +41,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
       - name: Dependency audit (govulncheck)
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
