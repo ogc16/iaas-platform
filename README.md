@@ -1,6 +1,9 @@
 # IaaS Platform
 
 ![CI](https://github.com/ogc16/iaas-platform/actions/workflows/ci.yml/badge.svg)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![API](https://img.shields.io/badge/API-OpenAPI%203.0-success)
 
 A Go-based **cloud control plane and billing platform** with multi-tenant organizations, compute resource lifecycle management, API key authentication, rate limiting, quotas, and usage-based billing.
 
@@ -195,6 +198,15 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full
 guide — development setup, testing, linting, and the PR process. CI runs
 formatting, vet, tests (with the race detector), coverage, a build, a gitleaks
 secret scan, and CodeQL on every push and pull request.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — layered design, modules, data flow
+- [Deployment](docs/DEPLOYMENT.md) — production hardening, migrations, monitoring, scaling
+- [Enterprise Readiness](docs/ENTERPRISE_READINESS.md) — hardening backlog and status
+- [Security](SECURITY.md) — threat model, configuration checklist, vulnerability reporting
+- [Roadmap](ROADMAP.md) — v1.0 gate, v2 features, and non-goals
+- [Changelog](CHANGELOG.md) — release history
 
 ## License
 
