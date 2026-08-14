@@ -40,7 +40,7 @@ func TestRateLimiter_RefillsAtConfiguredRate(t *testing.T) {
 
 	// Refilled by 6 -> capped at 10, then 10 requests drain the bucket.
 	allowed := 0
-	for rl.allow("ip-1") {
+	for ok, _, _ := rl.allow("ip-1"); ok; ok, _, _ = rl.allow("ip-1") {
 		allowed++
 	}
 	if allowed != 10 {
@@ -131,5 +131,70 @@ func TestRateLimiter_MiddlewareKeysByAPIKey(t *testing.T) {
 	handler.ServeHTTP(rec, req2)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 for shared api key, got %d", rec.Code)
+	}
+}
+
+func TestRateLimiter_MiddlewareSetsRateLimitHeaders(t *testing.T) {
+	now := time.Unix(0, 0)
+	rl := newRateLimiter(1, 5, time.Second, func() time.Time { return now })
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:5678"
+
+	// First request: 4 remaining after consumption.
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("X-RateLimit-Limit"); got != "5" {
+		t.Fatalf("expected X-RateLimit-Limit=5, got %q", got)
+	}
+	if got := rec.Header().Get("X-RateLimit-Remaining"); got != "4" {
+		t.Fatalf("expected X-RateLimit-Remaining=4, got %q", got)
+	}
+
+	// Second request: 3 remaining.
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if got := rec.Header().Get("X-RateLimit-Remaining"); got != "3" {
+		t.Fatalf("expected X-RateLimit-Remaining=3, got %q", got)
+	}
+}
+
+func TestRateLimiter_Middleware429IncludesResetHeaders(t *testing.T) {
+	now := time.Unix(0, 0)
+	rl := newRateLimiter(1, 1, time.Second, func() time.Time { return now })
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:9999"
+
+	// Consume the single token.
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	// Next request should be 429 with all rate-limit headers.
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("X-RateLimit-Limit"); got != "1" {
+		t.Fatalf("expected X-RateLimit-Limit=1, got %q", got)
+	}
+	if got := rec.Header().Get("X-RateLimit-Remaining"); got != "0" {
+		t.Fatalf("expected X-RateLimit-Remaining=0, got %q", got)
+	}
+	if got := rec.Header().Get("X-RateLimit-Reset"); got == "" {
+		t.Fatal("expected X-RateLimit-Reset header on 429")
+	}
+	if got := rec.Header().Get("Retry-After"); got == "" {
+		t.Fatal("expected Retry-After header on 429")
 	}
 }

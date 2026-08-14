@@ -15,7 +15,7 @@ Gate for declaring **v1.0** (no tags or releases exist yet):
 - [ ] **Idempotency keys** for instance creation and invoice generation
 - [ ] **API-key rotation endpoint**
 - [ ] **golangci-lint** wired into CI
-- [ ] **Request-body size limit** (`http.MaxBytesReader`)
+- [x] **Request-body size limit** (`http.MaxBytesReader`)
 - [ ] **Integration tests** against a real PostgreSQL (via docker-compose) in CI
 - [ ] First tagged release + published container image
 

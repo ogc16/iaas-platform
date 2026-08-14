@@ -4,9 +4,8 @@ info:
   description: |
     A Go-based cloud control plane and billing platform. Multi-tenant
     organizations, compute resource lifecycle management, API key
-    authentication, rate limiting, quotas, usage-based billing, signed
-    webhook notifications, an append-only audit trail, and Prometheus-format
-    metrics. The compute backend is a simulation; the control-plane API is real.
+    authentication, rate limiting, quotas, and usage-based billing.
+    The compute backend is a simulation; the control-plane API is real.
   version: 1.0.0
 servers:
   - url: http://localhost:8080/api/v1
@@ -18,9 +17,6 @@ tags:
   - name: organizations
   - name: compute
   - name: billing
-  - name: webhooks
-  - name: audit
-  - name: metrics
   - name: health
 paths:
   /healthz:
@@ -89,6 +85,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           description: Email already taken
+        '413':
+          $ref: '#/components/responses/RequestEntityTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /auth/login:
     post:
       tags: [auth]
@@ -657,220 +657,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/InvoiceLineItem'
-  /orgs/{orgID}/webhooks:
-    parameters:
-      - $ref: '#/components/parameters/OrgID'
-    get:
-      tags: [webhooks]
-      summary: List organization webhooks
-      description: Admins see all webhooks; other members receive 403.
-      security:
-        - bearerAuth: []
-        - apiKey: []
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: List of webhooks
-          headers:
-            X-Total-Count:
-              $ref: '#/components/headers/XTotalCount'
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Webhook'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [webhooks]
-      summary: Register a webhook
-      description: |
-        Registers an outbound endpoint subscribed to one or more events.
-        When no secret is supplied the platform generates one and returns it
-        once in the created webhook object.
-      security:
-        - bearerAuth: []
-        - apiKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateWebhookRequest'
-      responses:
-        '201':
-          description: Webhook created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Webhook'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /orgs/{orgID}/webhooks/{webhookID}:
-    parameters:
-      - $ref: '#/components/parameters/OrgID'
-      - $ref: '#/components/parameters/WebhookID'
-    get:
-      tags: [webhooks]
-      summary: Get a webhook
-      security:
-        - bearerAuth: []
-        - apiKey: []
-      responses:
-        '200':
-          description: The webhook
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Webhook'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    patch:
-      tags: [webhooks]
-      summary: Update a webhook
-      description: Only the fields supplied are changed; nil fields are left untouched.
-      security:
-        - bearerAuth: []
-        - apiKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateWebhookRequest'
-      responses:
-        '200':
-          description: The updated webhook
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Webhook'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    delete:
-      tags: [webhooks]
-      summary: Delete a webhook
-      security:
-        - bearerAuth: []
-        - apiKey: []
-      responses:
-        '204':
-          description: Webhook deleted
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /orgs/{orgID}/webhooks/{webhookID}/ping:
-    parameters:
-      - $ref: '#/components/parameters/OrgID'
-      - $ref: '#/components/parameters/WebhookID'
-    post:
-      tags: [webhooks]
-      summary: Test a webhook
-      description: Queues a synthetic `ping` delivery to the endpoint so the owner can verify connectivity.
-      security:
-        - bearerAuth: []
-        - apiKey: []
-      responses:
-        '202':
-          description: Test delivery queued
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: accepted
-                  action:
-                    type: string
-                    example: ping
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /orgs/{orgID}/audit:
-    parameters:
-      - $ref: '#/components/parameters/OrgID'
-    get:
-      tags: [audit]
-      summary: List the organization's audit trail
-      description: |
-        Admins see every recorded action; regular members are scoped to their
-        own actions. Results are ordered newest first.
-      security:
-        - bearerAuth: []
-        - apiKey: []
-      parameters:
-        - name: action
-          in: query
-          required: false
-          description: Only return events matching this action (e.g. `instance.create`).
-          schema:
-            type: string
-        - name: resource
-          in: query
-          required: false
-          description: Only return events for this resource (e.g. `instance`).
-          schema:
-            type: string
-        - name: user_id
-          in: query
-          required: false
-          description: Only return events performed by this user.
-          schema:
-            type: integer
-            format: int64
-        - name: since
-          in: query
-          required: false
-          description: Only return events on or after this RFC3339 timestamp.
-          schema:
-            type: string
-            format: date-time
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Audit events
-          headers:
-            X-Total-Count:
-              $ref: '#/components/headers/XTotalCount'
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AuditEvent'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /metrics:
-    get:
-      tags: [metrics]
-      summary: Prometheus-format metrics
-      description: |
-        Metrics endpoint. When METRICS_TOKEN is configured, requests must carry
-        it as a bearer token in the Authorization header.
-      security:
-        - metricsAuth: []
-      responses:
-        '200':
-          description: Prometheus text-format metrics
-          content:
-            text/plain:
-              schema:
-                type: string
-        '401':
-          description: Missing or invalid metrics token
 components:
   headers:
     XTotalCount:
@@ -878,6 +664,18 @@ components:
       schema:
         type: integer
         format: int64
+    X-RateLimit-Limit:
+      description: Maximum number of requests allowed per burst window
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      description: Number of requests remaining in the current window
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: Seconds until the rate-limit window resets (only on 429)
+      schema:
+        type: integer
   securitySchemes:
     bearerAuth:
       type: http
@@ -887,10 +685,6 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-    metricsAuth:
-      type: http
-      scheme: bearer
-      description: Bearer token set via METRICS_TOKEN. Omitted when no token is configured.
   parameters:
     Limit:
       name: limit
@@ -937,13 +731,6 @@ components:
       schema:
         type: integer
         format: int64
-    WebhookID:
-      name: webhookID
-      in: path
-      required: true
-      schema:
-        type: integer
-        format: int64
   responses:
     BadRequest:
       description: Invalid request
@@ -963,8 +750,25 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    Forbidden:
-      description: The caller does not have permission for this action
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/X-RateLimit-Limit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/X-RateLimit-Remaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/X-RateLimit-Reset'
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RateLimitError'
+    RequestEntityTooLarge:
+      description: Request body exceeds size limit
       content:
         application/json:
           schema:
@@ -977,6 +781,17 @@ components:
         error:
           type: string
           example: invalid request
+    RateLimitError:
+      type: object
+      required: [error, retry_after]
+      properties:
+        error:
+          type: string
+          example: rate limit exceeded
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying
+          example: 1
     SignupRequest:
       type: object
       required: [email, password, name]
@@ -1308,96 +1123,3 @@ components:
         amount_cents:
           type: integer
           format: int64
-    Webhook:
-      type: object
-      properties:
-        id:
-          type: integer
-          format: int64
-        organization_id:
-          type: integer
-          format: int64
-        url:
-          type: string
-          format: uri
-        events:
-          type: array
-          items:
-            type: string
-            enum: [instance.created, instance.updated, instance.terminated, org.member_added, org.member_removed, org.member_suspended, org.member_unsuspended, org.join_request_accepted, org.join_request_revoked, billing.usage_recorded, billing.invoice_generated]
-        active:
-          type: boolean
-          description: Whether the webhook is currently receiving deliveries.
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    CreateWebhookRequest:
-      type: object
-      required: [url, events]
-      properties:
-        url:
-          type: string
-          format: uri
-          maxLength: 512
-        events:
-          type: array
-          minItems: 1
-          maxItems: 20
-          items:
-            type: string
-            enum: [instance.created, instance.updated, instance.terminated, org.member_added, org.member_removed, org.member_suspended, org.member_unsuspended, org.join_request_accepted, org.join_request_revoked, billing.usage_recorded, billing.invoice_generated]
-        secret:
-          type: string
-          minLength: 16
-          maxLength: 128
-          description: Optional shared secret. When omitted the platform generates one.
-    UpdateWebhookRequest:
-      type: object
-      properties:
-        url:
-          type: string
-          format: uri
-          maxLength: 512
-        events:
-          type: array
-          maxItems: 20
-          items:
-            type: string
-            enum: [instance.created, instance.updated, instance.terminated, org.member_added, org.member_removed, org.member_suspended, org.member_unsuspended, org.join_request_accepted, org.join_request_revoked, billing.usage_recorded, billing.invoice_generated]
-        active:
-          type: boolean
-    AuditEvent:
-      type: object
-      properties:
-        id:
-          type: integer
-          format: int64
-        organization_id:
-          type: integer
-          format: int64
-        user_id:
-          type: integer
-          format: int64
-        actor_email:
-          type: string
-          format: email
-        action:
-          type: string
-          enum: [org.create, org.member.invite, org.member.remove, org.member.suspend, org.member.unsuspend, org.join_request.accept, org.join_request.revoke, instance.create, instance.start, instance.stop, instance.terminate, instance.status, billing.usage.record, billing.invoice.generate]
-        resource_type:
-          type: string
-        resource_id:
-          type: string
-        metadata:
-          type: object
-          additionalProperties: true
-        ip:
-          type: string
-        request_id:
-          type: string
-        created_at:
-          type: string
-          format: date-time

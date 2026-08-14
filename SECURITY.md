@@ -43,10 +43,10 @@ API access is authenticated via `Authorization: Bearer <jwt>` or `X-API-Key: <ke
 
 These are acknowledged and tracked; none block development, but production deployments should plan for them:
 
-1. **No request-body size limit.** Large payloads are bounded only by server timeouts. Terminate TLS and enforce body limits at a reverse proxy (or see the open issue to add `http.MaxBytesReader`).
+1. **Request-body size limit** is enforced via `http.MaxBytesReader` (default 1 MiB, configurable via `MAX_BODY_BYTES`). Oversized POST bodies return `413`.
 2. **No per-account rate limiting or login lockout.** Brute-force protection beyond bcrypt cost and the global limiter is future work.
 3. **CORS allows all origins** (`Access-Control-Allow-Origin: *`). An allowlist configuration is planned.
-4. **In-memory rate limiter** is per-process state — scale horizontally only with a shared store (e.g. Redis) or sticky sessions.
+4. **In-memory rate limiter** is per-process state — scale horizontally only with a shared store (e.g. Redis) or sticky sessions. Rate-limit headers (`X-RateLimit-Limit/Remaining/Reset`) are emitted on every response.
 5. **No API-key rotation endpoint** yet — keys are valid until changed in the database.
 
 ## Configuration Hardening Checklist
