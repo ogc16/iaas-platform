@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -57,6 +58,7 @@ type Config struct {
 	PasswordResetTTL    time.Duration
 	MetricsToken        string
 	WebhookPollInterval time.Duration
+	CORSAllowedOrigins  []string
 }
 
 func Load() (*Config, error) {
@@ -152,6 +154,7 @@ func Load() (*Config, error) {
 		PasswordResetTTL:    time.Duration(resetTTLHours) * time.Hour,
 		MetricsToken:        os.Getenv("METRICS_TOKEN"),
 		WebhookPollInterval: time.Duration(webhookPollSeconds) * time.Second,
+		CORSAllowedOrigins:  parseCSV(getEnv("CORS_ALLOWED_ORIGINS", "*")),
 	}
 
 	// Refuse to boot outside development with a weak or placeholder signing
@@ -171,6 +174,9 @@ func validateProductionSecrets(cfg *Config) error {
 	}
 	if len(cfg.JWTSecret) < MinJWTSecretLength {
 		return fmt.Errorf("JWT_SECRET must be at least %d characters in %s mode (got %d)", MinJWTSecretLength, cfg.Environment, len(cfg.JWTSecret))
+	}
+	if len(cfg.CORSAllowedOrigins) == 0 || (len(cfg.CORSAllowedOrigins) == 1 && cfg.CORSAllowedOrigins[0] == "*") {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS must list explicit origins in %s mode; refusing to boot with wildcard or empty list", cfg.Environment)
 	}
 	return nil
 }
@@ -200,4 +206,16 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func parseCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }

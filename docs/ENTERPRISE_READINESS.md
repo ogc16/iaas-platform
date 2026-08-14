@@ -44,8 +44,9 @@ Principles:
   repositories into the service calls. This is a wide but mechanical change.
 - **Prometheus metrics** (`/metrics`): HTTP request totals/latency histograms,
   DB pool stats, reconciler loop time. Requires `prometheus/client_golang`.
-- **CORS hardening**: configurable `CORS_ALLOWED_ORIGINS` (default `*` with
-  token auth is acceptable, but enterprise deployments want an allowlist).
+- **CORS allowlist**: configurable `CORS_ALLOWED_ORIGINS` (comma-separated);
+  defaults to `*` in development, refuses to boot in production without
+  explicit origins.
 - **Login rate limiting / lockout** (per-account, not just per-IP) and
   `Retry-After` on 429s.
 - **Idempotency keys** on `POST /instances` and `POST /billing/usage` so

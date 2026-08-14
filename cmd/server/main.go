@@ -144,7 +144,7 @@ func main() {
 		dispatcher.Run(dispatcherCtx)
 	}()
 
-	r := router.New(authHandler, orgHandler, computeHandler, billingHandler, webhookHandler, auditHandler, registry, cfg.MetricsToken, auth.Middleware(authSvc))
+	r := router.New(authHandler, orgHandler, computeHandler, billingHandler, webhookHandler, auditHandler, registry, cfg.MetricsToken, cfg.CORSAllowedOrigins, auth.Middleware(authSvc))
 
 	// Health probes for orchestrators and load balancers. /healthz is pure
 	// liveness; /readyz verifies the database is reachable.
