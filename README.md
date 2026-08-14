@@ -232,6 +232,10 @@ secret scan, and CodeQL on every push and pull request.
 
 - [Learn how to build a cloud control panel with authentication, billing, and resource management](https://dev.to/ogc16/learn-how-to-build-a-cloud-control-panel-with-authentication-billing-and-resource-management--530e) — walkthrough on DEV of building this platform.
 
+## Pinned Gist
+
+- [Privacy policy](https://gist.github.com/ogc16/a5679814a9342587790c0adbc97a790e) — pinned privacy-policy gist.
+
 ## License
 
 Licensed under the [MIT License](LICENSE).
