@@ -47,6 +47,8 @@ func New(
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/signup", authHandler.Signup)
 		r.Post("/auth/login", authHandler.Login)
+		r.Post("/auth/forgot-password", authHandler.ForgotPassword)
+		r.Post("/auth/reset-password", authHandler.ResetPassword)
 
 		r.Group(func(r chi.Router) {
 			r.Use(authMW)
@@ -60,6 +62,12 @@ func New(
 					r.Get("/", orgHandler.Get)
 					r.Post("/members", orgHandler.InviteMember)
 					r.Get("/members", orgHandler.ListMembers)
+					r.Delete("/members/{userID}", orgHandler.RemoveMember)
+					r.Post("/members/{userID}/suspend", orgHandler.SuspendMember)
+					r.Post("/members/{userID}/unsuspend", orgHandler.UnsuspendMember)
+					r.Get("/requests", orgHandler.ListJoinRequests)
+					r.Post("/requests/{userID}/accept", orgHandler.AcceptJoinRequest)
+					r.Post("/requests/{userID}/revoke", orgHandler.RevokeJoinRequest)
 
 					r.Route("/instances", func(r chi.Router) {
 						r.Post("/", computeHandler.Create)

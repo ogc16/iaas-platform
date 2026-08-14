@@ -17,6 +17,7 @@ import (
 	"github.com/ogc16/iaas-platform/internal/config"
 	"github.com/ogc16/iaas-platform/internal/database"
 	"github.com/ogc16/iaas-platform/internal/health"
+	"github.com/ogc16/iaas-platform/internal/mailer"
 	"github.com/ogc16/iaas-platform/internal/middleware"
 	"github.com/ogc16/iaas-platform/internal/organizations"
 	"github.com/ogc16/iaas-platform/internal/router"
@@ -64,7 +65,23 @@ func main() {
 	providerStateRepo := database.NewProviderStateRepository(pool)
 
 	jwtSvc := auth.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTExpiresIn)
-	authSvc := auth.NewService(userRepo, jwtSvc, auth.WithBcryptCost(cfg.BCryptCost))
+	resetRepo := database.NewPasswordResetRepository(pool)
+	authSvc := auth.NewService(
+		userRepo,
+		jwtSvc,
+		auth.WithBcryptCost(cfg.BCryptCost),
+		auth.WithOrgStore(orgRepo),
+		auth.WithResetStore(resetRepo),
+		auth.WithMailer(mailer.New(mailer.Config{
+			Host:     cfg.SMTPHost,
+			Port:     cfg.SMTPPort,
+			Username: cfg.SMTPUsername,
+			Password: cfg.SMTPPassword,
+			From:     cfg.SMTPFrom,
+		})),
+		auth.WithPasswordResetTTL(cfg.PasswordResetTTL),
+		auth.WithBaseURL(cfg.AppBaseURL),
+	)
 	authHandler := auth.NewHandler(authSvc)
 
 	orgSvc := organizations.NewService(orgRepo, userRepo)

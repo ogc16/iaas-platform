@@ -4,6 +4,7 @@
 *.dll
 *.so
 *.dylib
+bin/
 
 # Go
 *.test
@@ -18,6 +19,7 @@ vendor/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~

@@ -1,5 +1,8 @@
 const API = '/api/v1';
 
+const SUSPENSION_REMINDER_DAYS = 2;
+const SUSPENSION_REMINDER_MS = SUSPENSION_REMINDER_DAYS * 24 * 60 * 60 * 1000;
+
 let state = {
   token: localStorage.getItem('token'),
   user: null,
@@ -128,8 +131,49 @@ function orgRow(org, buttonClass, buttonText) {
   </tr>`;
 }
 
-function memberRow(m) {
-  return `<tr><td>#${m.user_id}</td><td><span class="badge ${m.role === 'admin' ? 'purple' : 'gray'}">${m.role}</span></td><td style="color:var(--muted)">${new Date(m.created_at).toLocaleDateString()}</td></tr>`;
+function memberRow(m, isAdmin, me) {
+  const isMe = m.user_id === me;
+  const now = Date.now();
+  let statusCell = '<span style="color:var(--muted)">Active</span>';
+  let expiringSoon = false;
+  if (m.suspended_until) {
+    const until = new Date(m.suspended_until);
+    const restored = until.getTime() <= now;
+    if (restored) {
+      statusCell = '<span class="badge yellow" title="Suspension expired; access restored automatically">Auto-restored</span>';
+    } else {
+      expiringSoon = until.getTime() - now <= SUSPENSION_REMINDER_MS;
+      statusCell = expiringSoon
+        ? `<span class="badge yellow" title="Suspension expires in ${daysLeft(until.getTime() - now)} days">Ends in ${daysLeft(until.getTime() - now)} day${daysLeft(until.getTime() - now) === 1 ? '' : 's'}</span>`
+        : `<span class="badge red">Suspended until ${until.toLocaleDateString()}</span>`;
+    }
+  }
+  let actions = '';
+  if (isAdmin && !isMe) {
+    const suspended = m.suspended_until && new Date(m.suspended_until).getTime() > now;
+    const toggle = suspended
+      ? `<button class="btn btn-outline btn-sm" onclick="unsuspendMember(${m.user_id})">Unsuspend</button>`
+      : `<button class="btn btn-outline btn-sm" onclick="showSuspendMember(${m.user_id})">Suspend</button>`;
+    actions = `<td style="text-align:right">
+      ${toggle}
+      <button class="btn btn-danger btn-sm" onclick="removeMember(${m.user_id})">Remove</button>
+    </td>`;
+  }
+  return `<tr${expiringSoon ? ' style="background:rgba(255,193,7,0.07)"' : ''}>
+    <td>
+      <strong>${escape(m.name || 'User')}</strong>
+      ${isMe ? '<span class="badge green" style="margin-left:4px">You</span>' : ''}
+      <div style="color:var(--muted);font-size:12px">${escape(m.email || '')} · #${m.user_id}</div>
+    </td>
+    <td><span class="badge ${m.role === 'admin' ? 'purple' : 'gray'}">${m.role}</span></td>
+    <td>${statusCell}</td>
+    <td style="color:var(--muted)">${new Date(m.created_at).toLocaleDateString()}</td>
+    ${actions}
+  </tr>`;
+}
+
+function daysLeft(ms) {
+  return Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }
 
 function instanceActionButtons(i) {
@@ -280,6 +324,9 @@ function renderLogin() {
           </div>
           <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="login()">Sign In</button>
           <p style="text-align:center;margin-top:16px;font-size:13px;color:var(--muted)">
+            <a href="#" onclick="showForgotPassword()">Forgot password?</a>
+          </p>
+          <p style="text-align:center;margin-top:8px;font-size:13px;color:var(--muted)">
             No account? <a href="#" onclick="showSignup()">Sign up</a>
           </p>
         </div>
@@ -287,12 +334,77 @@ function renderLogin() {
     </div>`;
 }
 
+window.showForgotPassword = function() {
+  document.getElementById('login-form').innerHTML = `
+    <div class="form-group"><label>Email</label><input type="email" id="forgot-email" placeholder="you@example.com"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="forgotPassword()">Send Reset Link</button>
+    <p style="text-align:center;margin-top:16px;font-size:13px;color:var(--muted)">
+      <a href="#" onclick="render()">Back to sign in</a>
+    </p>`;
+};
+
+window.forgotPassword = async function() {
+  const email = document.getElementById('forgot-email').value;
+  if (!email) return toast('Enter your email', 'error');
+  const { ok, body } = await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+  if (!ok) return toast(body.error || 'Request failed', 'error');
+  document.getElementById('login-form').innerHTML = `
+    <p style="text-align:center;color:var(--muted);font-size:14px;line-height:1.6">
+      If an account exists for that email, a reset link is on its way.<br>
+      Check your inbox (and spam folder).
+    </p>
+    <p style="text-align:center;margin-top:16px;font-size:13px;color:var(--muted)">
+      <a href="#" onclick="render()">Back to sign in</a>
+    </p>`;
+};
+
+function renderResetPassword(token) {
+  document.getElementById('app').innerHTML = `
+    <div class="login-page">
+      <div class="login-card">
+        <h1>IaaS Platform</h1>
+        <p class="subtitle">Choose a new password</p>
+        <div class="form-group">
+          <label>New password</label>
+          <input type="password" id="reset-password" placeholder="at least 8 characters">
+        </div>
+        <div class="form-group">
+          <label>Confirm password</label>
+          <input type="password" id="reset-password-confirm" placeholder="repeat new password">
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="resetPassword()">Reset Password</button>
+        <p style="text-align:center;margin-top:16px;font-size:13px;color:var(--muted)">
+          <a href="#" onclick="render()">Back to sign in</a>
+        </p>
+      </div>
+    </div>`;
+  window.__resetToken = token;
+}
+
+window.resetPassword = async function() {
+  const password = document.getElementById('reset-password').value;
+  const confirm = document.getElementById('reset-password-confirm').value;
+  if (!password || !confirm) return toast('Fill in both fields', 'error');
+  if (password !== confirm) return toast('Passwords do not match', 'error');
+  if (password.length < 8) return toast('Password must be at least 8 characters', 'error');
+  const { ok, body } = await api('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token: window.__resetToken, new_password: password }),
+  });
+  if (!ok) return toast(body.error || 'Reset failed', 'error');
+  if (history.replaceState) history.replaceState(null, '', window.location.pathname);
+  window.__resetToken = null;
+  render();
+  toast('Password updated. Sign in with your new password.');
+};
+
 window.showSignup = function() {
   document.getElementById('login-form').innerHTML = `
     <div class="form-group"><label>Name</label><input type="text" id="signup-name" placeholder="Your name"></div>
     <div class="form-group"><label>Email</label><input type="email" id="signup-email" placeholder="you@example.com"></div>
     <div class="form-group"><label>Password</label><input type="password" id="signup-password" placeholder="password"></div>
-    <div class="form-group"><label>Organization</label><input type="text" id="signup-org" placeholder="Company name"></div>
+    <div class="form-group"><label>Join existing org (slug, optional)</label><input type="text" id="signup-org-slug" placeholder="e.g., acme-corp"></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:16px">The organization's admin must approve your request.</div>
     <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="signup()">Create Account</button>
     <p style="text-align:center;margin-top:16px;font-size:13px;color:var(--muted)">
       Already have an account? <a href="#" onclick="render()">Sign in</a>
@@ -315,14 +427,17 @@ window.signup = async function() {
   const name = document.getElementById('signup-name').value;
   const email = document.getElementById('signup-email').value;
   const password = document.getElementById('signup-password').value;
-  const org = document.getElementById('signup-org').value;
+  const orgSlug = document.getElementById('signup-org-slug').value.trim();
   if (!name || !email || !password) return toast('Fill in all fields', 'error');
-  const { ok, body } = await api('/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password, organization: org }) });
+  const payload = { name, email, password };
+  if (orgSlug) payload.org_slug = orgSlug;
+  const { ok, body } = await api('/auth/signup', { method: 'POST', body: JSON.stringify(payload) });
   if (!ok) return toast(body.error || 'Signup failed', 'error');
   state.token = body.token;
   state.user = body.user;
   localStorage.setItem('token', body.token);
   render();
+  if (body.org_join_pending) toast('Account created. The organization admin must approve your request.', 'info');
 };
 
 window.logout = function() {
@@ -574,15 +689,137 @@ async function renderMembersTab() {
   const { ok, body: membersBody } = await api(`/orgs/${state.currentOrg}/members`);
   if (!ok) { main.innerHTML = '<div class="empty">Failed to load members</div>'; return; }
   const members = asArray(membersBody);
+  const me = state.user?.id;
+  const isAdmin = members.some(m => m.user_id === me && m.role === 'admin');
+
+  const now = Date.now();
+  const expiring = members.filter(m => {
+    if (!m.suspended_until) return false;
+    const until = new Date(m.suspended_until).getTime();
+    return until > now && until - now <= SUSPENSION_REMINDER_MS;
+  });
+  const reminderBanner = expiring.length === 0 || !isAdmin ? '' : `
+    <div class="card" style="margin-bottom:16px;border-color:#f5c518">
+      <h3 style="margin-bottom:8px">Suspension ending soon</h3>
+      <p style="color:var(--muted);margin-bottom:8px;font-size:13px">
+        ${expiring.length === 1 ? 'This member' : 'These members'} ${expiring.length === 1 ? 'is' : 'are'} due to regain full access automatically in ${SUSPENSION_REMINDER_DAYS} day${SUSPENSION_REMINDER_DAYS === 1 ? '' : 's'}.
+        Lift the suspension to restore access now, or extend it while you still can.
+      </p>
+      ${expiring.map(m => `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-top:1px solid rgba(128,128,128,0.2)">
+          <div>
+            <strong>${escape(m.name || 'User')}</strong>
+            <span class="badge yellow" style="margin-left:6px">Ends in ${daysLeft(new Date(m.suspended_until).getTime() - now)} day${daysLeft(new Date(m.suspended_until).getTime() - now) === 1 ? '' : 's'}</span>
+            <div style="color:var(--muted);font-size:12px">${escape(m.email || '')}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="unsuspendMember(${m.user_id})">Lift suspension</button>
+        </div>`).join('')}
+    </div>`;
+
+  let requests = [];
+  if (isAdmin) {
+    const reqResp = await api(`/orgs/${state.currentOrg}/requests`);
+    requests = reqResp.ok ? asArray(reqResp.body) : [];
+  }
+  const joinSection = requests.length === 0 ? '' : `
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin-bottom:12px">Pending Join Requests</h3>
+      <table><thead><tr><th>Name</th><th>Email</th><th>Requested</th><th></th></tr></thead><tbody>
+        ${requests.map(r => `
+          <tr>
+            <td><strong>${escape(r.name)}</strong></td>
+            <td style="color:var(--muted)">${escape(r.email)}</td>
+            <td style="color:var(--muted)">${new Date(r.created_at).toLocaleDateString()}</td>
+            <td style="text-align:right">
+              <button class="btn btn-primary btn-sm" onclick="acceptJoinRequest(${r.user_id})">Accept</button>
+              <button class="btn btn-danger btn-sm" onclick="revokeJoinRequest(${r.user_id})">Revoke</button>
+            </td>
+          </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+
   main.innerHTML = `
+    ${reminderBanner}
+    ${joinSection}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3>Team Members</h3>
       <button class="btn btn-primary btn-sm" onclick="showInviteMember()">+ Invite</button>
     </div>
-    <div class="card"><table><thead><tr><th>User ID</th><th>Role</th><th>Joined</th></tr></thead><tbody>
-      ${members.map(m => memberRow(m)).join('')}
+    <div class="card"><table><thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Joined</th>${isAdmin ? '<th></th>' : ''}</tr></thead><tbody>
+      ${members.map(m => memberRow(m, isAdmin, me)).join('')}
     </tbody></table></div>`;
 }
+
+window.acceptJoinRequest = async function(userId) {
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/requests/${userId}/accept`, { method: 'POST' });
+  if (!ok) return toast(body.error || 'Failed to accept request', 'error');
+  toast('Join request accepted', 'success');
+  renderMembersTab();
+};
+
+window.revokeJoinRequest = async function(userId) {
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/requests/${userId}/revoke`, { method: 'POST' });
+  if (!ok) return toast(body.error || 'Failed to revoke request', 'error');
+  toast('Join request revoked', 'info');
+  renderMembersTab();
+};
+
+window.removeMember = function(userId) {
+  modal(`
+    <h2>Revoke Access</h2>
+    <p style="color:var(--muted);margin:16px 0">Revoke this member's access to the organization? They will no longer see or manage organization resources.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmRemoveMember(${userId}); this.closest('.modal-overlay').remove()">Revoke Access</button>
+    </div>
+  `);
+};
+
+window.confirmRemoveMember = async function(userId) {
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/members/${userId}`, { method: 'DELETE' });
+  if (!ok) return toast(body.error || 'Failed to revoke access', 'error');
+  toast('Member access revoked', 'info');
+  renderMembersTab();
+};
+
+window.showSuspendMember = function(userId) {
+  modal(`
+    <h2>⏸ Suspend Member</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Temporarily revoke this member's access. Their rights are restored automatically when the period ends.</p>
+    <div class="form-group">
+      <label>Suspension length (days) *</label>
+      <input type="number" id="suspend-days" min="1" max="365" value="30">
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Between 1 and 365 days. Access auto-restores after this period.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmSuspendMember(${userId})">Suspend</button>
+    </div>
+  `);
+};
+
+window.confirmSuspendMember = async function(userId) {
+  const input = document.getElementById('suspend-days');
+  const days = parseInt(input?.value, 10);
+  if (!days || days < 1 || days > 365) return toast('Enter a suspension length between 1 and 365 days', 'error');
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/members/${userId}/suspend`, {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+  });
+  document.querySelector('.modal-overlay')?.remove();
+  if (!ok) return toast(body.error || 'Failed to suspend member', 'error');
+  addActivityLog('member.suspend', `Suspended member #${userId} for ${days} day${days === 1 ? '' : 's'}`);
+  toast(`Member suspended for ${days} day${days === 1 ? '' : 's'}`, 'success');
+  renderMembersTab();
+};
+
+window.unsuspendMember = async function(userId) {
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/members/${userId}/unsuspend`, { method: 'POST' });
+  if (!ok) return toast(body.error || 'Failed to unsuspend member', 'error');
+  addActivityLog('member.unsuspend', `Restored access for member #${userId}`);
+  toast('Member access restored', 'success');
+  renderMembersTab();
+};
 
 async function renderBillingTab() {
   const main = document.getElementById('tab-content');
@@ -1113,6 +1350,12 @@ window.updateSetting = function(key, value) {
 };
 
 async function init() {
+  const resetToken = new URLSearchParams(window.location.search).get('reset_token');
+  if (resetToken) {
+    if (history.replaceState) history.replaceState(null, '', window.location.pathname);
+    renderResetPassword(resetToken);
+    return;
+  }
   if (state.token) {
     const { ok, body } = await api('/me');
     if (ok) state.user = body;

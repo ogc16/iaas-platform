@@ -97,6 +97,13 @@ docker compose exec -it postgres psql -U iaas -d iaas
 | `PROVISIONING_DELAY_SECONDS` | `5` | Simulated time to `running` |
 | `STOP_DELAY_SECONDS` | `3` | Simulated time to `stopped` |
 | `RECONCILE_INTERVAL_SECONDS` | `2` | Reconciler tick interval |
+| `APP_BASE_URL` | `http://localhost:8080` | Public base URL used to build password reset links |
+| `SMTP_HOST` | — | SMTP relay for reset emails; when empty the link is logged instead of emailed |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USERNAME` | — | SMTP auth username (optional) |
+| `SMTP_PASSWORD` | — | SMTP auth password (optional) |
+| `SMTP_FROM` | `no-reply@iaas.local` | From address for outgoing email |
+| `PASSWORD_RESET_TTL_HOURS` | `24` | How long a reset token stays valid |
 
 ## API Endpoints
 
@@ -107,6 +114,8 @@ docker compose exec -it postgres psql -U iaas -d iaas
 | GET | `/readyz` | Readiness probe (200 when the DB is reachable, else 503) |
 | POST | `/api/v1/auth/signup` | Create account |
 | POST | `/api/v1/auth/login` | Login |
+| POST | `/api/v1/auth/forgot-password` | Email a one-time reset link (enumeration-safe) |
+| POST | `/api/v1/auth/reset-password` | Set a new password with a reset token |
 
 ### Authenticated (Bearer JWT or X-API-Key)
 | Method | Path | Description |
@@ -179,3 +188,14 @@ internal/
 | CPU | $0.50 / core-hour |
 | Memory | $0.20 / GB-hour |
 | Disk | $0.01 / GB-hour |
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full
+guide — development setup, testing, linting, and the PR process. CI runs
+formatting, vet, tests (with the race detector), coverage, a build, a gitleaks
+secret scan, and CodeQL on every push and pull request.
+
+## License
+
+Licensed under the [MIT License](LICENSE).

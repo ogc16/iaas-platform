@@ -25,6 +25,13 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("DB_MIN_CONNS", "")
 	t.Setenv("TLS_CERT_FILE", "")
 	t.Setenv("TLS_KEY_FILE", "")
+	t.Setenv("APP_BASE_URL", "")
+	t.Setenv("SMTP_HOST", "")
+	t.Setenv("SMTP_PORT", "")
+	t.Setenv("SMTP_USERNAME", "")
+	t.Setenv("SMTP_PASSWORD", "")
+	t.Setenv("SMTP_FROM", "")
+	t.Setenv("PASSWORD_RESET_TTL_HOURS", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -49,6 +56,15 @@ func TestLoad_Defaults(t *testing.T) {
 	if !strings.HasPrefix(cfg.DatabaseURL, "postgres://iaas:@localhost:5432/iaas") {
 		t.Fatalf("unexpected default database URL: %q", cfg.DatabaseURL)
 	}
+	if cfg.AppBaseURL != DefaultAppBaseURL {
+		t.Fatalf("expected default base URL %q, got %q", DefaultAppBaseURL, cfg.AppBaseURL)
+	}
+	if cfg.SMTPHost != "" || cfg.SMTPPort != DefaultSMTPPort || cfg.SMTPFrom != "" {
+		t.Fatalf("unexpected smtp defaults: %+v", cfg)
+	}
+	if cfg.PasswordResetTTL.Hours() != DefaultResetTTLHours {
+		t.Fatalf("expected default reset TTL %dh, got %v", DefaultResetTTLHours, cfg.PasswordResetTTL)
+	}
 }
 
 func TestLoad_RespectsEnvironment(t *testing.T) {
@@ -57,6 +73,13 @@ func TestLoad_RespectsEnvironment(t *testing.T) {
 	t.Setenv("JWT_SECRET", "super-secret")
 	t.Setenv("JWT_ISSUER", "my-issuer")
 	t.Setenv("JWT_EXPIRES_IN", "3600")
+	t.Setenv("APP_BASE_URL", "https://iaas.example.com")
+	t.Setenv("SMTP_HOST", "smtp.example.com")
+	t.Setenv("SMTP_PORT", "465")
+	t.Setenv("SMTP_USERNAME", "smtp-user")
+	t.Setenv("SMTP_PASSWORD", "smtp-pass")
+	t.Setenv("SMTP_FROM", "noreply@example.com")
+	t.Setenv("PASSWORD_RESET_TTL_HOURS", "4")
 
 	cfg, err := Load()
 	if err != nil {
@@ -71,6 +94,31 @@ func TestLoad_RespectsEnvironment(t *testing.T) {
 	}
 	if cfg.JWTSecret != "super-secret" || cfg.JWTIssuer != "my-issuer" || cfg.JWTExpiresIn != 3600 {
 		t.Fatalf("unexpected jwt config: %+v", cfg)
+	}
+	if cfg.AppBaseURL != "https://iaas.example.com" {
+		t.Fatalf("unexpected base URL: %q", cfg.AppBaseURL)
+	}
+	if cfg.SMTPHost != "smtp.example.com" || cfg.SMTPPort != 465 ||
+		cfg.SMTPUsername != "smtp-user" || cfg.SMTPPassword != "smtp-pass" ||
+		cfg.SMTPFrom != "noreply@example.com" {
+		t.Fatalf("unexpected smtp config: %+v", cfg)
+	}
+	if cfg.PasswordResetTTL.Hours() != 4 {
+		t.Fatalf("expected reset TTL 4h, got %v", cfg.PasswordResetTTL)
+	}
+}
+
+func TestLoad_InvalidSMTPPort(t *testing.T) {
+	t.Setenv("SMTP_PORT", "not-a-number")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid SMTP_PORT to fail")
+	}
+}
+
+func TestLoad_InvalidResetTTL(t *testing.T) {
+	t.Setenv("PASSWORD_RESET_TTL_HOURS", "not-a-number")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid PASSWORD_RESET_TTL_HOURS to fail")
 	}
 }
 
