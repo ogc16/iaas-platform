@@ -1,6 +1,7 @@
 # IaaS Platform
 
 ![CI](https://github.com/ogc16/iaas-platform/actions/workflows/ci.yml/badge.svg)
+![Coverage](https://img.shields.io/badge/coverage-45%25+-orange)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![API](https://img.shields.io/badge/API-OpenAPI%203.0-success)
@@ -82,6 +83,16 @@ docker compose exec -it postgres psql -U iaas -d iaas
 ```
 `\q` quit · `\x` expanded output · `\d` describe · `\dt` list tables
 
+## Examples
+
+| Path | What it does |
+|------|--------------|
+| `examples/api-usage.sh` | Scripted tour of the HTTP API (signup, orgs, instances, billing) with curl + jq |
+| `examples/quick-start.sh` | One-command end-to-end demo: compose up → server → instance lifecycle → billing → teardown |
+| `examples/terraform/` | Repeatable single-host deployment via the Docker provider (main/variables/outputs) |
+
+The API is also explorable interactively at **`/docs`** (Swagger UI, served from the running server; spec at `openapi.yaml`).
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -156,7 +167,16 @@ go test ./...
 go vet ./...
 ```
 
-`gofmt -l .` should print nothing. CI runs formatting, vet, tests (with the race detector), coverage, a build, a gitleaks secret scan, and [CodeQL](https://codeql.github.com/) analysis on every push and pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
+Integration tests exercise the repositories against a real PostgreSQL and are opt-in via the `integration` build tag (default `TEST_DATABASE_URL: postgres://iaas:iaas@127.0.0.1:5432/iaas?sslmode=disable`):
+
+```bash
+docker compose up -d
+$env:TEST_DATABASE_URL="postgres://iaas:iaas@127.0.0.1:5432/iaas?sslmode=disable"   # PowerShell
+TEST_DATABASE_URL='postgres://iaas:iaas@127.0.0.1:5432/iaas?sslmode=disable'          # bash
+go test -tags integration -count=1 ./internal/database/
+```
+
+`gofmt -l .` should print nothing. CI runs formatting, vet, tests (with the race detector), coverage (gate: 45%), a build, a gitleaks secret scan, and [CodeQL](https://codeql.github.com/) analysis on every push and pull request. `make audit` runs the [govulncheck](https://go.dev/blog/vuln) vulnerability scan. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 
 ## Tech Stack
 

@@ -7,9 +7,9 @@ MIGRATE  := migrate
 PORT     ?= 8080
 IMAGE    ?= iaas-platform:dev
 
-.PHONY: all fmt vet test race build migrate tidy docker-build docker-run clean
+.PHONY: all fmt vet audit test race build migrate tidy spec docker-build docker-run clean
 
-all: fmt vet test build
+all: fmt vet audit test build
 
 fmt:
 	@echo "==> gofmt"
@@ -18,6 +18,10 @@ fmt:
 vet:
 	@echo "==> go vet"
 	$(GO) vet ./...
+
+audit:
+	@echo "==> govulncheck"
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 test:
 	@echo "==> go test"
@@ -38,6 +42,10 @@ migrate:
 
 tidy:
 	$(GO) mod tidy
+
+spec:
+	@echo "==> verifying embedded OpenAPI copy is in sync"
+	@cmp openapi.yaml internal/dashboard/static/openapi.yaml
 
 docker-build:
 	@echo "==> building image $(IMAGE)"

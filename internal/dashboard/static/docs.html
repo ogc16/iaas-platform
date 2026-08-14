@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IaaS Platform — API Reference</title>
+  <link rel="stylesheet" href="/static/swagger/swagger-ui.css">
+  <style>
+    body { margin: 0; background: #fafafa; }
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+              background: #0b1220; color: #fff; font: 600 15px/1.2 sans-serif; }
+    .topbar a { color: #8ab4ff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <span>IaaS Platform</span>
+    <a href="/">← Dashboard</a>
+    <a href="/static/openapi.yaml" target="_blank">openapi.yaml</a>
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="/static/swagger/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = function () {
+      window.ui = SwaggerUIBundle({
+        url: '/static/openapi.yaml',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        displayRequestDuration: true,
+        presets: [SwaggerUIBundle.presets.apis],
+        layout: 'BaseLayout'
+      });
+    };
+  </script>
+</body>
+</html>

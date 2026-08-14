@@ -34,6 +34,9 @@ func New(
 	r.Use(rl.Middleware)
 
 	r.Handle("/static/*", http.StripPrefix("/static/", dashboard.Handler()))
+	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/static/docs.html", http.StatusFound)
+	})
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		html, err := dashboard.IndexHTML()
 		if err != nil {
