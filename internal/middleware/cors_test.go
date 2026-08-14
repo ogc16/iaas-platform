@@ -9,12 +9,13 @@ import (
 	"testing"
 )
 
-func TestCORS_SetsHeaders(t *testing.T) {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestCORS_WildcardAllowsAllOrigins(t *testing.T) {
+	handler := CORS([]string{"*"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -22,24 +23,93 @@ func TestCORS_SetsHeaders(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Fatalf("unexpected allow-origin: %q", got)
+		t.Fatalf("expected wildcard, got %q", got)
 	}
-	if rec.Header().Get("Access-Control-Allow-Headers") == "" {
-		t.Fatal("expected Access-Control-Allow-Headers to be set")
+}
+
+func TestCORS_EmptyListAllowsAllOrigins(t *testing.T) {
+	handler := CORS(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Origin", "https://example.com")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected wildcard for nil list, got %q", got)
+	}
+}
+
+func TestCORS_AllowedOriginMatch(t *testing.T) {
+	handler := CORS([]string{"https://app.example.com", "https://admin.example.com"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Fatalf("expected matching origin, got %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Fatalf("expected Vary: Origin, got %q", got)
+	}
+}
+
+func TestCORS_RejectedOriginOmitsHeader(t *testing.T) {
+	handler := CORS([]string{"https://app.example.com"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("expected no Allow-Origin header for rejected origin, got %q", got)
 	}
 }
 
 func TestCORS_PreflightShortCircuits(t *testing.T) {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusTeapot)
-	}))
+	handler := CORS([]string{"https://app.example.com"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusTeapot)
+		}),
+	)
 
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/orgs", nil)
+	req.Header.Set("Origin", "https://app.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 for OPTIONS, got %d", rec.Code)
+	}
+}
+
+func TestCORS_SetsCommonHeaders(t *testing.T) {
+	handler := CORS([]string{"*"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Header().Get("Access-Control-Allow-Headers") == "" {
+		t.Fatal("expected Access-Control-Allow-Headers to be set")
+	}
+	if rec.Header().Get("Access-Control-Allow-Methods") == "" {
+		t.Fatal("expected Access-Control-Allow-Methods to be set")
 	}
 }
 

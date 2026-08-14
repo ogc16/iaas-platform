@@ -27,6 +27,7 @@ func New(
 	auditHandler *audit.Handler,
 	registry *metrics.Registry,
 	metricsToken string,
+	corsAllowedOrigins []string,
 	authMW func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -38,7 +39,7 @@ func New(
 	r.Use(audit.Middleware)
 	r.Use(middleware.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(middleware.CORS)
+	r.Use(middleware.CORS(corsAllowedOrigins))
 	r.Use(rl.Middleware)
 	r.Use(metrics.Middleware(registry))
 

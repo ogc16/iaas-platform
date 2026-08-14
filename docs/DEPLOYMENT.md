@@ -84,7 +84,32 @@ The server refuses to boot against a newer schema than its binary understands, s
 
 - `GET /healthz` — liveness; `GET /readyz` — readiness (DB check).
 - Structured JSON logs via `slog`; each request logs with its `X-Request-ID`, enabling correlation across hops.
-- **No metrics endpoint yet** — Prometheus export is on the roadmap (`ROADMAP.md`). Until then, monitor the health probes, error logs, and DB metrics.
+- `GET /metrics` — Prometheus-compatible text exposition format (version 0.0.4). The endpoint is mounted outside the auth middleware so internal scrapers don't need a bearer token. When `METRICS_TOKEN` is set, scrapes must present it as `Authorization: Bearer <token>`.
+
+### Recorded metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `iaas_http_requests_total` | counter | `method`, `route`, `status` | Total HTTP requests handled |
+| `iaas_http_request_duration_seconds` | histogram | `method`, `route` | Request latency (seconds) |
+| `iaas_webhook_deliveries_total` | counter | — | Webhook deliveries completed |
+| `iaas_webhook_failures_total` | counter | — | Webhook deliveries that exhausted retries |
+| `iaas_webhook_retries_total` | counter | — | Webhook delivery retry attempts |
+
+### Example scrape config
+
+```yaml
+scrape_configs:
+  - job_name: iaas-platform
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["localhost:8080"]
+    # If METRICS_TOKEN is set:
+    # authorization:
+    #   credentials: <token>
+```
+
+The registry is a zero-dependency, in-process Prometheus text renderer — no `client_golang` dependency is required.
 
 ## Scaling Notes
 

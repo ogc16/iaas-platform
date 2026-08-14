@@ -9,8 +9,8 @@ This roadmap reflects maintainer intent, not commitments. Items are ordered by p
 Gate for declaring **v1.0** (no tags or releases exist yet):
 
 - [ ] **Database transactions** for multi-step writes (instance creation, org creation, invoice generation) — see `docs/ENTERPRISE_READINESS.md`
-- [ ] **Prometheus metrics export** (HTTP request latency/errors, per-endpoint) for production observability
-- [ ] **CORS allowlist** configuration instead of `*`
+- [x] **Prometheus metrics export** (HTTP request latency/errors, per-endpoint) for production observability
+- [x] **CORS allowlist** configuration instead of `*`
 - [ ] **Login lockout** on repeated failed authentication
 - [ ] **Idempotency keys** for instance creation and invoice generation
 - [ ] **API-key rotation endpoint**

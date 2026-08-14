@@ -45,7 +45,7 @@ These are acknowledged and tracked; none block development, but production deplo
 
 1. **No request-body size limit.** Large payloads are bounded only by server timeouts. Terminate TLS and enforce body limits at a reverse proxy (or see the open issue to add `http.MaxBytesReader`).
 2. **No per-account rate limiting or login lockout.** Brute-force protection beyond bcrypt cost and the global limiter is future work.
-3. **CORS allows all origins** (`Access-Control-Allow-Origin: *`). An allowlist configuration is planned.
+3. **CORS origins are configurable** via `CORS_ALLOWED_ORIGINS` (comma-separated). Defaults to `*` in development; production refuses to boot with a wildcard or empty list — set explicit origins.
 4. **In-memory rate limiter** is per-process state — scale horizontally only with a shared store (e.g. Redis) or sticky sessions.
 5. **No API-key rotation endpoint** yet — keys are valid until changed in the database.
 
