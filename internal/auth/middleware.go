@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ogc16/iaas-platform/internal/httpx"
+	"github.com/ogc16/iaas-platform/internal/reqctx"
 )
 
 type contextKey string
@@ -29,7 +30,9 @@ func Middleware(svc *Service) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), UserContextKey, claims)
+			ctx := reqctx.WithActorEmail(r.Context(), claims.Email)
+			ctx = reqctx.WithUserID(ctx, claims.UserID)
+			ctx = context.WithValue(ctx, UserContextKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

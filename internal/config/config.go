@@ -21,6 +21,7 @@ const (
 	DefaultAppBaseURL    = "http://localhost:8080"
 	DefaultSMTPPort      = 587
 	DefaultResetTTLHours = 24
+	DefaultWebhookPoll   = 5
 )
 
 // placeholderJWTSecrets are well-known placeholder values that must never be
@@ -33,27 +34,29 @@ var placeholderJWTSecrets = map[string]bool{
 }
 
 type Config struct {
-	Port              int
-	DatabaseURL       string
-	DBMaxConns        int32
-	DBMinConns        int32
-	JWTSecret         string
-	JWTIssuer         string
-	JWTExpiresIn      int
-	BCryptCost        int
-	Environment       string
-	ProvisioningDelay time.Duration
-	StopDelay         time.Duration
-	ReconcileInterval time.Duration
-	TLSCertFile       string
-	TLSKeyFile        string
-	AppBaseURL        string
-	SMTPHost          string
-	SMTPPort          int
-	SMTPUsername      string
-	SMTPPassword      string
-	SMTPFrom          string
-	PasswordResetTTL  time.Duration
+	Port                int
+	DatabaseURL         string
+	DBMaxConns          int32
+	DBMinConns          int32
+	JWTSecret           string
+	JWTIssuer           string
+	JWTExpiresIn        int
+	BCryptCost          int
+	Environment         string
+	ProvisioningDelay   time.Duration
+	StopDelay           time.Duration
+	ReconcileInterval   time.Duration
+	TLSCertFile         string
+	TLSKeyFile          string
+	AppBaseURL          string
+	SMTPHost            string
+	SMTPPort            int
+	SMTPUsername        string
+	SMTPPassword        string
+	SMTPFrom            string
+	PasswordResetTTL    time.Duration
+	MetricsToken        string
+	WebhookPollInterval time.Duration
 }
 
 func Load() (*Config, error) {
@@ -115,6 +118,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid SMTP_PORT: %w", err)
 	}
+	webhookPollSeconds, err := strconv.Atoi(getEnv("WEBHOOK_POLL_SECONDS", strconv.Itoa(DefaultWebhookPoll)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid WEBHOOK_POLL_SECONDS: %w", err)
+	}
 	resetTTLHours, err := strconv.Atoi(getEnv("PASSWORD_RESET_TTL_HOURS", strconv.Itoa(DefaultResetTTLHours)))
 	if err != nil {
 		return nil, fmt.Errorf("invalid PASSWORD_RESET_TTL_HOURS: %w", err)
@@ -122,27 +129,29 @@ func Load() (*Config, error) {
 
 	environment := getEnv("ENV", DefaultEnvironment)
 	cfg := &Config{
-		Port:              port,
-		DatabaseURL:       databaseURL(),
-		DBMaxConns:        int32(dbMaxConns),
-		DBMinConns:        int32(dbMinConns),
-		JWTSecret:         getEnv("JWT_SECRET", DefaultJWTSecret),
-		JWTIssuer:         getEnv("JWT_ISSUER", "iaas-platform"),
-		JWTExpiresIn:      jwtExpiresIn,
-		BCryptCost:        bcryptCost,
-		Environment:       environment,
-		ProvisioningDelay: provisioningDelay,
-		StopDelay:         stopDelay,
-		ReconcileInterval: reconcileInterval,
-		TLSCertFile:       tlsCertFile,
-		TLSKeyFile:        tlsKeyFile,
-		AppBaseURL:        getEnv("APP_BASE_URL", DefaultAppBaseURL),
-		SMTPHost:          getEnv("SMTP_HOST", ""),
-		SMTPPort:          smtpPort,
-		SMTPUsername:      getEnv("SMTP_USERNAME", ""),
-		SMTPPassword:      getEnv("SMTP_PASSWORD", ""),
-		SMTPFrom:          getEnv("SMTP_FROM", ""),
-		PasswordResetTTL:  time.Duration(resetTTLHours) * time.Hour,
+		Port:                port,
+		DatabaseURL:         databaseURL(),
+		DBMaxConns:          int32(dbMaxConns),
+		DBMinConns:          int32(dbMinConns),
+		JWTSecret:           getEnv("JWT_SECRET", DefaultJWTSecret),
+		JWTIssuer:           getEnv("JWT_ISSUER", "iaas-platform"),
+		JWTExpiresIn:        jwtExpiresIn,
+		BCryptCost:          bcryptCost,
+		Environment:         environment,
+		ProvisioningDelay:   provisioningDelay,
+		StopDelay:           stopDelay,
+		ReconcileInterval:   reconcileInterval,
+		TLSCertFile:         tlsCertFile,
+		TLSKeyFile:          tlsKeyFile,
+		AppBaseURL:          getEnv("APP_BASE_URL", DefaultAppBaseURL),
+		SMTPHost:            getEnv("SMTP_HOST", ""),
+		SMTPPort:            smtpPort,
+		SMTPUsername:        getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:        getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:            getEnv("SMTP_FROM", ""),
+		PasswordResetTTL:    time.Duration(resetTTLHours) * time.Hour,
+		MetricsToken:        os.Getenv("METRICS_TOKEN"),
+		WebhookPollInterval: time.Duration(webhookPollSeconds) * time.Second,
 	}
 
 	// Refuse to boot outside development with a weak or placeholder signing

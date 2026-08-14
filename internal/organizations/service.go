@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ogc16/iaas-platform/internal/audit"
 	"github.com/ogc16/iaas-platform/internal/database"
 	"github.com/ogc16/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/webhooks"
 )
 
 var (
@@ -49,10 +52,30 @@ type UserStore interface {
 type Service struct {
 	orgRepo  OrgStore
 	userRepo UserStore
+	auditer  audit.Recorder
+	emitter  webhooks.Emitter
 }
 
 func NewService(orgRepo OrgStore, userRepo UserStore) *Service {
 	return &Service{orgRepo: orgRepo, userRepo: userRepo}
+}
+
+// SetObservability wires optional audit recording and webhook emission into
+// the service. Passing nil for either channel disables it.
+func (s *Service) SetObservability(auditer audit.Recorder, emitter webhooks.Emitter) {
+	s.auditer = auditer
+	s.emitter = emitter
+}
+
+func (s *Service) record(ctx context.Context, orgID, userID int64, action string, metadata map[string]any) {
+	audit.Record(ctx, s.auditer, &models.AuditEvent{
+		OrganizationID: &orgID,
+		UserID:         &userID,
+		Action:         action,
+		ResourceType:   "organization",
+		ResourceID:     strconv.FormatInt(orgID, 10),
+		Metadata:       metadata,
+	})
 }
 
 func (s *Service) Create(ctx context.Context, userID int64, req models.CreateOrgRequest) (*models.Organization, error) {
@@ -83,6 +106,7 @@ func (s *Service) Create(ctx context.Context, userID int64, req models.CreateOrg
 		return nil, fmt.Errorf("add owner: %w", err)
 	}
 
+	s.record(ctx, org.ID, userID, audit.ActionOrgCreate, map[string]any{"name": org.Name, "slug": org.Slug})
 	return org, nil
 }
 
@@ -162,6 +186,12 @@ func (s *Service) InviteMember(ctx context.Context, orgID, userID int64, req mod
 	if err := s.orgRepo.AddMember(ctx, member); err != nil {
 		return nil, fmt.Errorf("add member: %w", err)
 	}
+	s.record(ctx, orgID, userID, audit.ActionMemberInvite, map[string]any{
+		"email": targetUser.Email, "user_id": targetUser.ID, "role": role,
+	})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventOrgMemberAdded, map[string]any{
+		"organization_id": orgID, "user_id": targetUser.ID, "email": targetUser.Email, "role": role,
+	})
 	return member, nil
 }
 
@@ -260,6 +290,10 @@ func (s *Service) AcceptJoinRequest(ctx context.Context, orgID, userID, adminID 
 	if err := s.orgRepo.DeleteJoinRequest(ctx, orgID, userID); err != nil && !errors.Is(err, database.ErrNotFound) {
 		return nil, fmt.Errorf("delete join request: %w", err)
 	}
+	s.record(ctx, orgID, adminID, audit.ActionJoinRequestAccept, map[string]any{"user_id": userID})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventOrgJoinRequestAccepted, map[string]any{
+		"organization_id": orgID, "user_id": userID,
+	})
 	return member, nil
 }
 
@@ -275,6 +309,10 @@ func (s *Service) RevokeJoinRequest(ctx context.Context, orgID, userID, adminID 
 		}
 		return fmt.Errorf("delete join request: %w", err)
 	}
+	s.record(ctx, orgID, adminID, audit.ActionJoinRequestRevoke, map[string]any{"user_id": userID})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventOrgJoinRequestRevoked, map[string]any{
+		"organization_id": orgID, "user_id": userID,
+	})
 	return nil
 }
 
@@ -298,6 +336,10 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, memberUserID, adminID
 		}
 		return fmt.Errorf("remove member: %w", err)
 	}
+	s.record(ctx, orgID, adminID, audit.ActionMemberRemove, map[string]any{"user_id": memberUserID})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventOrgMemberRemoved, map[string]any{
+		"organization_id": orgID, "user_id": memberUserID,
+	})
 	return nil
 }
 
@@ -325,6 +367,10 @@ func (s *Service) SuspendMember(ctx context.Context, orgID, memberUserID int64, 
 	if err != nil {
 		return nil, fmt.Errorf("find member: %w", err)
 	}
+	s.record(ctx, orgID, adminID, audit.ActionMemberSuspend, map[string]any{"user_id": memberUserID, "days": days, "until": until})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventOrgMemberSuspended, map[string]any{
+		"organization_id": orgID, "user_id": memberUserID, "until": until,
+	})
 	return member, nil
 }
 
@@ -345,5 +391,9 @@ func (s *Service) UnsuspendMember(ctx context.Context, orgID, memberUserID, admi
 	if err != nil {
 		return nil, fmt.Errorf("find member: %w", err)
 	}
+	s.record(ctx, orgID, adminID, audit.ActionMemberUnsuspend, map[string]any{"user_id": memberUserID})
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventOrgMemberUnsuspended, map[string]any{
+		"organization_id": orgID, "user_id": memberUserID,
+	})
 	return member, nil
 }

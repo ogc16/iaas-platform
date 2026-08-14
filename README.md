@@ -250,6 +250,7 @@ secret scan, and CodeQL on every push and pull request.
 - [Architecture](docs/ARCHITECTURE.md) — layered design, modules, data flow
 - [Deployment](docs/DEPLOYMENT.md) — production hardening, migrations, monitoring, scaling
 - [Deployment Playbook](docs/DEPLOYMENT_PLAYBOOK.md) — step-by-step guides for systemd, Railway, Kubernetes, and Terraform
+- [Community Guidelines](docs/DISCUSSIONS.md) — how to use GitHub Discussions
 - [Enterprise Readiness](docs/ENTERPRISE_READINESS.md) — hardening backlog and status
 - [Security](SECURITY.md) — threat model, configuration checklist, vulnerability reporting
 - [Roadmap](ROADMAP.md) — v1.0 gate, v2 features, and non-goals

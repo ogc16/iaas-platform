@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"math/big"
 	mrand "math/rand"
+	"strconv"
 
+	"github.com/ogc16/iaas-platform/internal/audit"
 	"github.com/ogc16/iaas-platform/internal/database"
 	"github.com/ogc16/iaas-platform/internal/models"
+	"github.com/ogc16/iaas-platform/internal/webhooks"
 )
 
 var (
@@ -50,10 +53,36 @@ type Service struct {
 	provider Provider
 	quotas   QuotaStore
 	capacity CapacityStore
+	auditer  audit.Recorder
+	emitter  webhooks.Emitter
 }
 
 func NewService(repo InstanceStore, orgRepo MembershipStore, provider Provider, quotas QuotaStore, capacity CapacityStore) *Service {
 	return &Service{repo: repo, orgRepo: orgRepo, provider: provider, quotas: quotas, capacity: capacity}
+}
+
+// SetObservability wires optional audit recording and webhook emission into
+// the service. Passing nil for either channel disables it.
+func (s *Service) SetObservability(auditer audit.Recorder, emitter webhooks.Emitter) {
+	s.auditer = auditer
+	s.emitter = emitter
+}
+
+func (s *Service) record(ctx context.Context, e *models.AuditEvent) {
+	audit.Record(ctx, s.auditer, e)
+}
+
+func (s *Service) instanceAudit(orgID, userID int64, action string, inst *models.ComputeInstance) *models.AuditEvent {
+	return &models.AuditEvent{
+		OrganizationID: &orgID,
+		UserID:         &userID,
+		Action:         action,
+		ResourceType:   "instance",
+		ResourceID:     strconv.FormatInt(inst.ID, 10),
+		Metadata: map[string]any{
+			"name": inst.Name, "instance_type": inst.InstanceType, "region": inst.Region, "status": inst.Status,
+		},
+	}
 }
 
 // instanceTransitions describes the instance lifecycle as a directed graph.
@@ -181,6 +210,9 @@ func (s *Service) Create(ctx context.Context, orgID, userID int64, req models.Cr
 		}
 		return nil, fmt.Errorf("create instance: %w", err)
 	}
+
+	s.record(ctx, s.instanceAudit(orgID, userID, audit.ActionInstanceCreate, inst))
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventInstanceCreated, inst)
 	return inst, nil
 }
 
@@ -237,7 +269,12 @@ func (s *Service) Start(ctx context.Context, orgID, instanceID, userID int64) er
 	if err := s.provider.Start(ctx, inst.ProviderID); err != nil {
 		return fmt.Errorf("start instance: %w", err)
 	}
-	return s.repo.UpdateStatus(ctx, instanceID, models.InstanceStatusPending)
+	if err := s.repo.UpdateStatus(ctx, instanceID, models.InstanceStatusPending); err != nil {
+		return err
+	}
+	s.record(ctx, s.instanceAudit(orgID, userID, audit.ActionInstanceStart, inst))
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventInstanceUpdated, inst)
+	return nil
 }
 
 func (s *Service) Stop(ctx context.Context, orgID, instanceID, userID int64) error {
@@ -251,7 +288,12 @@ func (s *Service) Stop(ctx context.Context, orgID, instanceID, userID int64) err
 	if err := s.provider.Stop(ctx, inst.ProviderID); err != nil {
 		return fmt.Errorf("stop instance: %w", err)
 	}
-	return s.repo.UpdateStatus(ctx, instanceID, models.InstanceStatusStopping)
+	if err := s.repo.UpdateStatus(ctx, instanceID, models.InstanceStatusStopping); err != nil {
+		return err
+	}
+	s.record(ctx, s.instanceAudit(orgID, userID, audit.ActionInstanceStop, inst))
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventInstanceUpdated, inst)
+	return nil
 }
 
 func (s *Service) Terminate(ctx context.Context, orgID, instanceID, userID int64) error {
@@ -268,7 +310,12 @@ func (s *Service) Terminate(ctx context.Context, orgID, instanceID, userID int64
 	if err := s.provider.Terminate(ctx, inst.ProviderID); err != nil {
 		return fmt.Errorf("terminate instance: %w", err)
 	}
-	return s.repo.UpdateStatus(ctx, instanceID, models.InstanceStatusTerminating)
+	if err := s.repo.UpdateStatus(ctx, instanceID, models.InstanceStatusTerminating); err != nil {
+		return err
+	}
+	s.record(ctx, s.instanceAudit(orgID, userID, audit.ActionInstanceTerminate, inst))
+	webhooks.Emit(ctx, s.emitter, orgID, webhooks.EventInstanceTerminated, inst)
+	return nil
 }
 
 func (s *Service) enforceQuota(ctx context.Context, orgID int64, cpu, mem, disk int) error {

@@ -562,6 +562,8 @@ async function renderOrgDetail(org) {
       <button class="tab active" data-tab="instances" onclick="switchTab(this)">Instances</button>
       <button class="tab" data-tab="members" onclick="switchTab(this)">Members</button>
       <button class="tab" data-tab="billing" onclick="switchTab(this)">Billing</button>
+      <button class="tab" data-tab="webhooks" onclick="switchTab(this)">Webhooks</button>
+      <button class="tab" data-tab="audit" onclick="switchTab(this)">Audit Log</button>
     </div>
 
     <div id="tab-content">
@@ -577,6 +579,8 @@ window.switchTab = function(btn) {
   if (tab === 'instances') main.innerHTML = renderInstancesTab(state.instances);
   else if (tab === 'members') renderMembersTab();
   else if (tab === 'billing') renderBillingTab();
+  else if (tab === 'webhooks') renderWebhooksTab();
+  else if (tab === 'audit') renderAuditTab();
 };
 
 function renderInstancesTab(instances) {
@@ -924,6 +928,173 @@ window.viewInvoice = function(invoiceId) {
 window.downloadInvoice = function(invoiceId) {
   toast('Invoice download feature coming soon', 'info');
 };
+
+async function renderWebhooksTab() {
+  const main = document.getElementById('tab-content');
+  main.innerHTML = '<div class="loading">Loading webhooks...</div>';
+  const { ok, status, body } = await api(`/orgs/${state.currentOrg}/webhooks`);
+  if (!ok) {
+    if (status === 403) {
+      main.innerHTML = '<div class="card empty"><p>Only admins can manage webhooks.</p></div>';
+    } else {
+      main.innerHTML = '<div class="card empty"><p>Failed to load webhooks</p></div>';
+    }
+    return;
+  }
+  const webhooks = asArray(body);
+
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3>Webhooks</h3>
+      <button class="btn btn-primary btn-sm" onclick="showCreateWebhook()">+ New Webhook</button>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+      Notify external services in realtime. Deliveries are POSTed with a signed envelope and retried on failure.
+    </p>
+    ${webhooks.length === 0 ? '<div class="card empty"><p>No webhooks yet. Create one to receive event notifications.</p></div>' :
+    `<div class="card"><table><thead><tr><th>URL</th><th>Events</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>
+      ${webhooks.map(w => webhookRow(w)).join('')}
+    </tbody></table></div>`}`;
+}
+
+function webhookRow(w) {
+  const eventBadges = (w.events || []).length === 0
+    ? '<span style="color:var(--muted)">none</span>'
+    : (w.events || []).map(ev => `<span class="badge blue" style="margin:2px 2px 0 0">${escape(ev)}</span>`).join('');
+  return `
+    <tr>
+      <td><div style="word-break:break-all;max-width:280px">${escape(w.url)}</div></td>
+      <td>${eventBadges}</td>
+      <td><span class="badge ${w.active ? 'green' : 'gray'}">${w.active ? 'Active' : 'Disabled'}</span></td>
+      <td style="color:var(--muted);white-space:nowrap">${new Date(w.created_at).toLocaleDateString()}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-outline btn-sm" onclick="testWebhook(${w.id})">Test</button>
+        <button class="btn btn-outline btn-sm" onclick="toggleWebhook(${w.id}, ${w.active})">${w.active ? 'Disable' : 'Enable'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteWebhook(${w.id})">Delete</button>
+      </td>
+    </tr>`;
+}
+
+window.showCreateWebhook = function() {
+  modal(`
+    <h2>Create Webhook</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">We'll POST a signed JSON envelope to this URL whenever the selected events happen.</p>
+    <div class="form-group">
+      <label>Endpoint URL *</label>
+      <input type="text" id="webhook-url" placeholder="https://hooks.example.com/iaas">
+    </div>
+    <div class="form-group">
+      <label>Events *</label>
+      <div id="webhook-events" style="display:flex;flex-direction:column;gap:6px">
+        ${['instance.created','instance.updated','instance.terminated','org.member_added','org.member_removed','org.member_suspended','org.member_unsuspended','org.join_request_accepted','org.join_request_revoked','billing.usage_recorded','billing.invoice_generated']
+          .map(ev => `<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" value="${ev}"> ${ev}</label>`).join('')}
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Secret (optional)</label>
+      <input type="text" id="webhook-secret" placeholder="leave blank to auto-generate">
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Shared secret used to sign deliveries with HMAC-SHA256.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-primary" onclick="createWebhook()">Create Webhook</button>
+    </div>
+  `);
+};
+
+window.createWebhook = async function() {
+  const url = document.getElementById('webhook-url').value.trim();
+  const events = [...document.querySelectorAll('#webhook-events input[type="checkbox"]:checked')].map(cb => cb.value);
+  const secret = document.getElementById('webhook-secret').value.trim();
+
+  if (!url) return toast('Endpoint URL is required', 'error');
+  if (events.length === 0) return toast('Select at least one event', 'error');
+
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/webhooks`, {
+    method: 'POST',
+    body: JSON.stringify({ url, events, secret: secret || undefined }),
+  });
+  document.querySelector('.modal-overlay')?.remove();
+  if (!ok) return toast(body.error || 'Failed to create webhook', 'error');
+  toast('Webhook created', 'success');
+  renderWebhooksTab();
+};
+
+window.testWebhook = async function(webhookId) {
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/webhooks/${webhookId}/ping`, { method: 'POST' });
+  if (!ok) return toast(body.error || 'Failed to send test delivery', 'error');
+  toast('Test delivery queued', 'info');
+};
+
+window.toggleWebhook = async function(webhookId, active) {
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/webhooks/${webhookId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active: !active }),
+  });
+  if (!ok) return toast(body.error || 'Failed to update webhook', 'error');
+  toast(active ? 'Webhook disabled' : 'Webhook enabled', 'success');
+  renderWebhooksTab();
+};
+
+window.deleteWebhook = function(webhookId) {
+  modal(`
+    <h2>Delete Webhook</h2>
+    <p style="color:var(--muted);margin:16px 0">Permanently delete this webhook? It will stop receiving deliveries immediately.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDeleteWebhook(${webhookId}); this.closest('.modal-overlay').remove()">Delete</button>
+    </div>
+  `);
+};
+
+window.confirmDeleteWebhook = async function(webhookId) {
+  const { ok, body } = await api(`/orgs/${state.currentOrg}/webhooks/${webhookId}`, { method: 'DELETE' });
+  if (!ok) return toast(body.error || 'Failed to delete webhook', 'error');
+  toast('Webhook deleted', 'info');
+  renderWebhooksTab();
+};
+
+const AUDIT_ACTIONS = ['org.create','org.member.invite','org.member.remove','org.member.suspend','org.member.unsuspend','org.join_request.accept','org.join_request.revoke','instance.create','instance.start','instance.stop','instance.terminate','instance.status','billing.usage.record','billing.invoice.generate'];
+
+function renderAuditTab() {
+  renderAuditTabWith('');
+}
+
+window.filterAudit = function() {
+  renderAuditTabWith(document.getElementById('audit-action-filter').value);
+};
+
+async function renderAuditTabWith(action) {
+  const main = document.getElementById('tab-content');
+  main.innerHTML = '<div class="loading">Loading audit trail...</div>';
+  const qs = action ? `?action=${encodeURIComponent(action)}` : '';
+  const { ok, status, body } = await api(`/orgs/${state.currentOrg}/audit${qs}`);
+  if (!ok) {
+    if (status === 403) {
+      main.innerHTML = '<div class="card empty"><p>You do not have access to the audit trail.</p></div>';
+    } else {
+      main.innerHTML = '<div class="card empty"><p>Failed to load audit trail</p></div>';
+    }
+    return;
+  }
+  const events = asArray(body);
+
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3>Audit Trail</h3>
+      <select id="audit-action-filter" onchange="filterAudit()" style="background:var(--bg);color:var(--text);border:1px solid rgba(128,128,128,0.3);border-radius:6px;padding:6px 10px;font-size:13px">
+        <option value="">All actions</option>
+        ${AUDIT_ACTIONS.map(a => `<option value="${escape(a)}" ${a === action ? 'selected' : ''}>${escape(a)}</option>`).join('')}
+      </select>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+      A record of every security-relevant action taken in this organization.
+    </p>
+    ${events.length === 0 ? '<div class="card empty"><p>No audit events recorded yet</p></div>' :
+    `<div class="card"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>IP</th></tr></thead><tbody>
+      ${events.map(e => auditRow(e)).join('')}
+    </tbody></table></div>`}`;
+}
 
 window.showCreateOrg = function() {
   modal(`

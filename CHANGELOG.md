@@ -11,6 +11,9 @@ No tagged releases exist yet; all work currently lives under **Unreleased**.
 
 ### Added
 
+- **Webhooks** — organizations can register outbound endpoints subscribed to instance, member, join-request, and billing events; deliveries are HMAC-SHA256 signed envelopes with exponential-backoff retries via an in-process dispatcher worker
+- **Audit trail** — append-only record of security-relevant actions (`GET /orgs/{orgID}/audit`) with action/resource/user/since filters; admins see the full org, members only their own actions
+- **Prometheus metrics** — hand-rolled `internal/metrics` registry with counters, gauges, and histograms exposed at `/metrics` (optional bearer-token auth), plus request-latency and webhook delivery counters
 - **Password reset** — enumeration-safe `POST /auth/forgot-password` and one-time `POST /auth/reset-password` flows with expiring (24h) tokens delivered via SMTP or logged to stdout when SMTP is unconfigured
 - **Member suspension** — admin-controlled suspensions with auto-expiry (`suspended_until`), dashboard reminder banner for expirations within 2 days, and automatic access revocation while suspended
 - **Org join requests** — users can sign up with an `org_slug` and request membership; admins accept or revoke requests
