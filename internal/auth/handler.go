@@ -36,6 +36,10 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
+		if errors.Is(err, ErrOrgNotFound) {
+			httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httpx.ErrInternalServer})
 		return
 	}
@@ -82,4 +86,53 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, user)
+}
+
+// ForgotPassword emails a reset link for the given address. It always reports
+// success for valid requests, even when no account exists, so callers cannot
+// enumerate registered emails.
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req models.ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if err := validate.Struct(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := h.svc.RequestPasswordReset(r.Context(), req.Email); err != nil {
+		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httpx.ErrInternalServer})
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+// ResetPassword sets a new password using a single-use token from the reset
+// email.
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req models.ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if err := validate.Struct(&req); err != nil {
+		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := h.svc.ResetPassword(r.Context(), req.Token, req.NewPassword); err != nil {
+		if errors.Is(err, ErrInvalidResetToken) {
+			httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httpx.ErrInternalServer})
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "password reset"})
 }

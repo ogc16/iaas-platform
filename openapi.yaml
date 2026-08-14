@@ -106,6 +106,45 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           description: Invalid credentials
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Request a password reset email
+      description: Always reports success for valid requests so callers cannot enumerate which emails have accounts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset email sent (or would have been sent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForgotPasswordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Reset a password with a one-time token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForgotPasswordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /me:
     get:
       tags: [auth]
@@ -230,6 +269,162 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/OrgMember'
+  /orgs/{orgID}/members/{userID}:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    delete:
+      tags: [organizations]
+      summary: Revoke a member's access
+      description: Removes a user from the organization and clears any pending join request. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Access revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/members/{userID}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Suspend a member temporarily
+      description: >-
+        Revokes a member's access for the given number of days (1-365). Rights
+        are restored automatically once the period elapses; an admin can also
+        restore access early via unsuspend. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendMemberRequest'
+      responses:
+        '200':
+          description: Member suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/members/{userID}/unsuspend:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Unsuspend a member
+      description: Immediately restores a suspended member's access. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Member unsuspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /orgs/{orgID}/requests:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+    get:
+      tags: [organizations]
+      summary: List pending join requests
+      description: Users who signed up with this organization's slug and are waiting for approval. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Join requests
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/XTotalCount'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JoinRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /orgs/{orgID}/requests/{userID}/accept:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Accept a join request
+      description: Adds the user as a member of the organization and removes the pending request. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Member added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: User is already a member
+  /orgs/{orgID}/requests/{userID}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/OrgID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [organizations]
+      summary: Revoke a join request
+      description: Denies a pending join request. Admins only.
+      security:
+        - bearerAuth: []
+        - apiKey: []
+      responses:
+        '200':
+          description: Request revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /orgs/{orgID}/instances:
     parameters:
       - $ref: '#/components/parameters/OrgID'
@@ -496,6 +691,13 @@ components:
       schema:
         type: integer
         format: int64
+    UserID:
+      name: userID
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
     InstanceID:
       name: instanceID
       in: path
@@ -552,6 +754,9 @@ components:
           type: string
         organization:
           type: string
+        org_slug:
+          type: string
+          description: Slug of an existing organization to request access to. The organization admin must accept before access is granted.
     LoginRequest:
       type: object
       required: [email, password]
@@ -570,8 +775,36 @@ components:
         api_key:
           type: string
           description: Raw API key. Returned only once, on signup; the server stores a SHA-256 hash.
+        org_join_pending:
+          type: boolean
+          description: True when the account requested access to an organization and is awaiting admin approval.
         user:
           $ref: '#/components/schemas/User'
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token:
+          type: string
+          description: Single-use reset token from the password reset email.
+          minLength: 20
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+    ForgotPasswordResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: sent
     User:
       type: object
       properties:
@@ -630,6 +863,15 @@ components:
         role:
           type: string
           enum: [admin, member]
+    SuspendMemberRequest:
+      type: object
+      required: [days]
+      properties:
+        days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Number of days the member is suspended for; access is restored automatically afterwards.
     OrgMember:
       type: object
       properties:
@@ -642,7 +884,37 @@ components:
         user_id:
           type: integer
           format: int64
+        name:
+          type: string
+          description: Display name of the member's user account.
+        email:
+          type: string
+          format: email
         role:
+          type: string
+        suspended_until:
+          type: string
+          format: date-time
+          description: When present, the member's access is revoked until this time, after which it is restored automatically.
+        created_at:
+          type: string
+          format: date-time
+    JoinRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        organization_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        name:
           type: string
         created_at:
           type: string
