@@ -50,6 +50,7 @@ Run these locally before pushing; CI enforces them too.
 ```bash
 gofmt -l .        # format check (should print nothing)
 go vet ./...      # static analysis
+make lint         # golangci-lint (errcheck, govet, staticcheck, etc.)
 go test ./...     # unit tests
 go test -race ./...  # same, with the race detector
 ```
@@ -105,6 +106,7 @@ internal/
 
 - [ ] `gofmt -l .` prints nothing
 - [ ] `go vet ./...` passes
+- [ ] `make lint` passes (golangci-lint)
 - [ ] `go test -race ./...` passes
 - [ ] New behavior has test coverage
 - [ ] No new swallowed errors or hardcoded credentials
