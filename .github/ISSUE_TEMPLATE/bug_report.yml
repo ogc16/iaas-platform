@@ -1,0 +1,64 @@
+name: Bug report
+description: Report a reproducible problem with the IaaS Platform
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report. Please search
+        existing issues first to avoid duplicates.
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: What happened, and what did you expect instead?
+      placeholder: A clear and concise description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact API calls or UI actions to reproduce the issue.
+      value: |
+        1.
+        2.
+        3.
+      render: bash
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `git log -1 --oneline` or the tag in use.
+      placeholder: e.g. a76f9f3 or v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: env
+    attributes:
+      label: Environment
+      description: Where are you running it?
+      options:
+        - Local (docker compose / go run)
+        - Docker image
+        - Kubernetes
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server logs (slog JSON), including the X-Request-ID if available.
+      render: bash
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for a duplicate
+          required: true
+        - label: I am not reporting a security vulnerability (use SECURITY.md reporting instead)
+          required: true

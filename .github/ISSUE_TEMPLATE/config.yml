@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/ogc16/iaas-platform/discussions
+    about: Ask questions, share ideas, and discuss the project.
+  - name: Security
+    url: https://github.com/ogc16/iaas-platform/security/advisories/new
+    about: Report a security vulnerability privately (see SECURITY.md).
