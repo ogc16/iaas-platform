@@ -22,6 +22,7 @@ const (
 	DefaultSMTPPort      = 587
 	DefaultResetTTLHours = 24
 	DefaultWebhookPoll   = 5
+	DefaultMaxBodyBytes  = "1M"
 )
 
 // placeholderJWTSecrets are well-known placeholder values that must never be
@@ -57,6 +58,7 @@ type Config struct {
 	PasswordResetTTL    time.Duration
 	MetricsToken        string
 	WebhookPollInterval time.Duration
+	MaxBodyBytes        int64
 }
 
 func Load() (*Config, error) {
@@ -127,6 +129,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid PASSWORD_RESET_TTL_HOURS: %w", err)
 	}
 
+	maxBodyBytes, err := parseBodyBytes(getEnv("MAX_BODY_BYTES", DefaultMaxBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("invalid MAX_BODY_BYTES: %w", err)
+	}
+
 	environment := getEnv("ENV", DefaultEnvironment)
 	cfg := &Config{
 		Port:                port,
@@ -152,6 +159,7 @@ func Load() (*Config, error) {
 		PasswordResetTTL:    time.Duration(resetTTLHours) * time.Hour,
 		MetricsToken:        os.Getenv("METRICS_TOKEN"),
 		WebhookPollInterval: time.Duration(webhookPollSeconds) * time.Second,
+		MaxBodyBytes:        maxBodyBytes,
 	}
 
 	// Refuse to boot outside development with a weak or placeholder signing
@@ -200,4 +208,19 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func parseBodyBytes(s string) (int64, error) {
+	if s == "" {
+		return 0, nil
+	}
+	suffix := s[len(s)-1]
+	if suffix == 'm' || suffix == 'M' {
+		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return n * 1024 * 1024, nil
+	}
+	return strconv.ParseInt(s, 10, 64)
 }

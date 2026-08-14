@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -49,7 +51,10 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-func (rl *RateLimiter) allow(key string) bool {
+// allow checks whether a request is permitted and returns the number of
+// remaining tokens after consumption. When denied it returns 0 remaining
+// and the number of seconds until the next token is available.
+func (rl *RateLimiter) allow(key string) (allowed bool, remaining int, retryAfter int) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -57,7 +62,7 @@ func (rl *RateLimiter) allow(key string) bool {
 	v, exists := rl.visitors[key]
 	if !exists {
 		rl.visitors[key] = &visitor{tokens: rl.burst - 1, lastSeen: now}
-		return true
+		return true, rl.burst - 1, 0
 	}
 
 	// Refill tokens at `rate` tokens per `interval`.
@@ -69,11 +74,16 @@ func (rl *RateLimiter) allow(key string) bool {
 	}
 
 	if v.tokens <= 0 {
-		return false
+		// Approximate retry delay: one token arrives after one interval / rate.
+		retry := int(rl.interval.Seconds()) / rl.rate
+		if retry < 1 {
+			retry = 1
+		}
+		return false, 0, retry
 	}
 
 	v.tokens--
-	return true
+	return true, v.tokens, 0
 }
 
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
@@ -83,11 +93,19 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			key = apiKey
 		}
 
-		if !rl.allow(key) {
-			w.Header().Set("Retry-After", "1")
+		allowed, remaining, retryAfter := rl.allow(key)
+
+		// Emit standard rate-limit headers on every response so clients can
+		// self-throttle before hitting the limit.
+		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.burst))
+		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+
+		if !allowed {
+			w.Header().Set("X-RateLimit-Reset", strconv.Itoa(retryAfter))
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error":"rate limit exceeded"}`))
+			fmt.Fprintf(w, `{"error":"rate limit exceeded","retry_after":%d}`, retryAfter)
 			return
 		}
 
