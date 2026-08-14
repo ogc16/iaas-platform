@@ -738,16 +738,25 @@ async function renderMembersTab() {
       </tbody></table>
     </div>`;
 
+  const meMember = members.find(m => m.user_id === me) || { user_id: me, role: 'member' };
+  const teamTable = isAdmin
+    ? `<div class="card"><table><thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody>
+        ${members.map(m => memberRow(m, isAdmin, me)).join('')}
+      </tbody></table></div>`
+    : `<div class="card">
+        <h3 style="margin-bottom:12px">My Membership</h3>
+        <p style="color:var(--muted);margin-bottom:16px">Your role and access status in this organization.</p>
+        <table><tbody>${memberRow(meMember, false, me)}</tbody></table>
+      </div>`;
+
   main.innerHTML = `
     ${reminderBanner}
     ${joinSection}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h3>Team Members</h3>
-      <button class="btn btn-primary btn-sm" onclick="showInviteMember()">+ Invite</button>
+      <h3>${isAdmin ? 'Team Members' : 'Membership'}</h3>
+      ${isAdmin ? '<button class="btn btn-primary btn-sm" onclick="showInviteMember()">+ Invite</button>' : ''}
     </div>
-    <div class="card"><table><thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Joined</th>${isAdmin ? '<th></th>' : ''}</tr></thead><tbody>
-      ${members.map(m => memberRow(m, isAdmin, me)).join('')}
-    </tbody></table></div>`;
+    ${teamTable}`;
 }
 
 window.acceptJoinRequest = async function(userId) {

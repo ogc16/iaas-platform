@@ -166,12 +166,22 @@ func (s *Service) InviteMember(ctx context.Context, orgID, userID int64, req mod
 }
 
 // ListMembers returns one page of an org's members and the total count.
+// Admins see every member; regular members only ever see their own membership,
+// so they cannot enumerate other members or their contact details.
 func (s *Service) ListMembers(ctx context.Context, orgID, userID int64, limit, offset int) ([]models.OrgMember, int64, error) {
-	if _, err := s.orgRepo.FindMember(ctx, orgID, userID); err != nil {
+	member, err := s.orgRepo.FindMember(ctx, orgID, userID)
+	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			return nil, 0, ErrNotMember
 		}
 		return nil, 0, fmt.Errorf("find member: %w", err)
+	}
+
+	if member.Role != "admin" {
+		if offset > 0 {
+			return []models.OrgMember{}, 1, nil
+		}
+		return []models.OrgMember{*member}, 1, nil
 	}
 
 	members, err := s.orgRepo.FindMembers(ctx, orgID, limit, offset)

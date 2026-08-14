@@ -432,6 +432,43 @@ func TestService_ListMembers_Success(t *testing.T) {
 	}
 }
 
+func TestService_ListMembers_NonAdminSeesOnlySelf(t *testing.T) {
+	svc, _, users := newTestService()
+	org, _ := svc.Create(context.Background(), 1, models.CreateOrgRequest{Name: "Acme"})
+	users.byEmail["bob@example.com"] = &models.User{ID: 2, Email: "bob@example.com"}
+	if _, err := svc.InviteMember(context.Background(), org.ID, 1, models.InviteMemberRequest{Email: "bob@example.com"}); err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+
+	members, total, err := svc.ListMembers(context.Background(), org.ID, 2, 50, 0)
+	if err != nil {
+		t.Fatalf("ListMembers: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total 1 for non-admin, got %d", total)
+	}
+	if len(members) != 1 || members[0].UserID != 2 {
+		t.Fatalf("expected only the caller's own membership, got %+v", members)
+	}
+}
+
+func TestService_ListMembers_NonAdminOffsetPastOwnRow(t *testing.T) {
+	svc, _, users := newTestService()
+	org, _ := svc.Create(context.Background(), 1, models.CreateOrgRequest{Name: "Acme"})
+	users.byEmail["bob@example.com"] = &models.User{ID: 2, Email: "bob@example.com"}
+	if _, err := svc.InviteMember(context.Background(), org.ID, 1, models.InviteMemberRequest{Email: "bob@example.com"}); err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+
+	members, total, err := svc.ListMembers(context.Background(), org.ID, 2, 50, 1)
+	if err != nil {
+		t.Fatalf("ListMembers: %v", err)
+	}
+	if total != 1 || len(members) != 0 {
+		t.Fatalf("expected empty page with total 1, got %d members, total %d", len(members), total)
+	}
+}
+
 func TestService_List_ReturnsUserOrgs(t *testing.T) {
 	svc, _, _ := newTestService()
 	org, _ := svc.Create(context.Background(), 1, models.CreateOrgRequest{Name: "Acme"})
