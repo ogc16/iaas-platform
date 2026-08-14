@@ -251,6 +251,9 @@ paths:
     get:
       tags: [organizations]
       summary: List organization members
+      description: |
+        Admins see every member. Regular members only ever see their own
+        membership, so they cannot enumerate other members or their details.
       security:
         - bearerAuth: []
         - apiKey: []
