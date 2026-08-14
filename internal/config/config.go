@@ -10,14 +10,17 @@ import (
 )
 
 const (
-	DefaultEnvironment = "development"
-	DefaultJWTSecret   = "change-me-in-production"
-	MinJWTSecretLength = 32
-	DefaultBCryptCost  = 12
-	MinBCryptCost      = 4
-	MaxBCryptCost      = 15
-	DefaultDBMaxConns  = 20
-	DefaultDBMinConns  = 2
+	DefaultEnvironment   = "development"
+	DefaultJWTSecret     = "change-me-in-production"
+	MinJWTSecretLength   = 32
+	DefaultBCryptCost    = 12
+	MinBCryptCost        = 4
+	MaxBCryptCost        = 15
+	DefaultDBMaxConns    = 20
+	DefaultDBMinConns    = 2
+	DefaultAppBaseURL    = "http://localhost:8080"
+	DefaultSMTPPort      = 587
+	DefaultResetTTLHours = 24
 )
 
 // placeholderJWTSecrets are well-known placeholder values that must never be
@@ -44,6 +47,13 @@ type Config struct {
 	ReconcileInterval time.Duration
 	TLSCertFile       string
 	TLSKeyFile        string
+	AppBaseURL        string
+	SMTPHost          string
+	SMTPPort          int
+	SMTPUsername      string
+	SMTPPassword      string
+	SMTPFrom          string
+	PasswordResetTTL  time.Duration
 }
 
 func Load() (*Config, error) {
@@ -101,6 +111,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
 	}
 
+	smtpPort, err := strconv.Atoi(getEnv("SMTP_PORT", strconv.Itoa(DefaultSMTPPort)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid SMTP_PORT: %w", err)
+	}
+	resetTTLHours, err := strconv.Atoi(getEnv("PASSWORD_RESET_TTL_HOURS", strconv.Itoa(DefaultResetTTLHours)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid PASSWORD_RESET_TTL_HOURS: %w", err)
+	}
+
 	environment := getEnv("ENV", DefaultEnvironment)
 	cfg := &Config{
 		Port:              port,
@@ -117,6 +136,13 @@ func Load() (*Config, error) {
 		ReconcileInterval: reconcileInterval,
 		TLSCertFile:       tlsCertFile,
 		TLSKeyFile:        tlsKeyFile,
+		AppBaseURL:        getEnv("APP_BASE_URL", DefaultAppBaseURL),
+		SMTPHost:          getEnv("SMTP_HOST", ""),
+		SMTPPort:          smtpPort,
+		SMTPUsername:      getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:      getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:          getEnv("SMTP_FROM", ""),
+		PasswordResetTTL:  time.Duration(resetTTLHours) * time.Hour,
 	}
 
 	// Refuse to boot outside development with a weak or placeholder signing

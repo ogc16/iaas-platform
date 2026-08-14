@@ -94,3 +94,17 @@ func (r *UserRepository) FindByAPIKeyHash(ctx context.Context, apiKeyHash string
 	}
 	return u, nil
 }
+
+// UpdatePassword replaces a user's password hash. It returns ErrNotFound when
+// the user does not exist.
+func (r *UserRepository) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {
+	query := `UPDATE users SET password_hash = $2, updated_at = $3 WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, query, id, passwordHash, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
