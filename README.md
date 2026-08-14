@@ -249,6 +249,7 @@ secret scan, and CodeQL on every push and pull request.
 
 - [Architecture](docs/ARCHITECTURE.md) — layered design, modules, data flow
 - [Deployment](docs/DEPLOYMENT.md) — production hardening, migrations, monitoring, scaling
+- [Deployment Playbook](docs/DEPLOYMENT_PLAYBOOK.md) — step-by-step guides for systemd, Railway, Kubernetes, and Terraform
 - [Enterprise Readiness](docs/ENTERPRISE_READINESS.md) — hardening backlog and status
 - [Security](SECURITY.md) — threat model, configuration checklist, vulnerability reporting
 - [Roadmap](ROADMAP.md) — v1.0 gate, v2 features, and non-goals
@@ -257,6 +258,7 @@ secret scan, and CodeQL on every push and pull request.
 ## Blog Post
 
 - [Learn how to build a cloud control panel with authentication, billing, and resource management](https://dev.to/ogc16/learn-how-to-build-a-cloud-control-panel-with-authentication-billing-and-resource-management--530e) — walkthrough on DEV of building this platform.
+- [Deploying IaaS Platform: A Production Playbook](https://dev.to/ogc16/deploying-iaas-platform-a-production-playbook-421f) — from `docker compose` to production on Railway, Kubernetes, and beyond (mirrors `docs/DEPLOYMENT_PLAYBOOK.md`).
 
 ## Pinned Gist
 
